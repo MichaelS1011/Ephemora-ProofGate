@@ -13,7 +13,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 API_DIR = ROOT / "apps" / "api"
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
-DEV_KEYS = ROOT / ".local" / "devkeys"
 FIXTURE_TENANT = "PG-67F9819A"
 REPLAY_TENANT = "PG-REPLAY-TENANT"
 FIXTURE_NOW = datetime(2026, 11, 9, 10, 9, 57, tzinfo=timezone.utc)
@@ -36,9 +35,9 @@ def doctor_report() -> dict:
 
 
 @unittest.skipUnless(
-    (DEV_KEYS / "cell-evidence-private.pem").is_file()
-    and (DEV_KEYS / "proofgate-receipt-private.pem").is_file(),
-    "local development key pairs are required for the API-level negative matrix",
+    (FIXTURES / "cell-evidence-private.pem").is_file()
+    and (FIXTURES / "proofgate-receipt-private.pem").is_file(),
+    "the committed fixture key pairs are required for the API-level negative matrix",
 )
 class VerifierNegativeTests(unittest.TestCase):
     @classmethod
@@ -47,9 +46,14 @@ class VerifierNegativeTests(unittest.TestCase):
         cls.data_dir = Path(cls.temp.name) / "state"
         os.environ["PROOFGATE_DATA_DIR"] = str(cls.data_dir)
         os.environ["EPHEMORA_BIN"] = str(Path(cls.temp.name) / "unused-cell")
-        os.environ["PROOFGATE_CELL_SIGNING_KEY"] = str(DEV_KEYS / "cell-evidence-private.pem")
+        # Both key pairs are committed test artifacts under
+        # apps/api/tests/fixtures/, so the matrix runs deterministically on a
+        # clean clone. The evidence fixtures are signed with the Cell fixture
+        # pair, which is also the API's verification trust anchor; mixing in
+        # any other private key would fail the health gate or verification.
+        os.environ["PROOFGATE_CELL_SIGNING_KEY"] = str(FIXTURES / "cell-evidence-private.pem")
         os.environ["PROOFGATE_CELL_PUBLIC_KEY"] = str(FIXTURES / "cell-evidence-public.pem")
-        os.environ["PROOFGATE_RECEIPT_SIGNING_KEY"] = str(DEV_KEYS / "proofgate-receipt-private.pem")
+        os.environ["PROOFGATE_RECEIPT_SIGNING_KEY"] = str(FIXTURES / "proofgate-receipt-private.pem")
         os.environ["PROOFGATE_RECEIPT_PUBLIC_KEY"] = str(FIXTURES / "proofgate-receipt-public.pem")
         os.environ["PROOFGATE_BRIDGE_TOKEN"] = "test-bridge-token"
         sys.path.insert(0, str(API_DIR))
@@ -90,7 +94,16 @@ class VerifierNegativeTests(unittest.TestCase):
             ),
             encoding="utf-8",
         )
-        self.api.CELL_BIN = str(script)
+        # Launch the stand-in with the same interpreter that runs this suite
+        # so its ``verify_bundle`` import resolves inside the project venv
+        # instead of the host ``python3`` picked by the shebang.
+        launcher = directory / "fake_cell"
+        launcher.write_text(
+            '#!/bin/sh\n' + f'exec "{sys.executable}" "{script}" "$@"\n',
+            encoding="utf-8",
+        )
+        launcher.chmod(0o755)
+        self.api.CELL_BIN = str(launcher)
         self.api._health_cache = None
 
     def new_job(self, tenant: str = FIXTURE_TENANT) -> str:

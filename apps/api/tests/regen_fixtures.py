@@ -27,8 +27,9 @@ This script regenerates the fixtures deterministically:
   * `cell-evidence-replay.json`      — same report ID as the positive run,
     bound to the replay tenant.
 
-The fixture key pair is a test artifact, not a production key: the private
-half lives in `apps/api/tests/fixtures/` alongside its public half and is
+The fixture key pairs (Cell evidence and ProofGate receipt) are test
+artifacts, not production keys: their private halves live in
+`apps/api/tests/fixtures/` alongside their public halves and are
 used only to sign recorded, deterministic test evidence.
 
 Usage (from the repository root):
@@ -156,12 +157,48 @@ def write(name: str, env: dict) -> None:
     print(f"wrote {path.relative_to(ROOT)}")
 
 
+def key_id(public_key: object) -> str:
+    raw = public_key.public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)  # type: ignore[attr-defined]
+    return sha256_hex(raw)[:16]
+
+
+def regenerate_receipt(cell_key: Ed25519PrivateKey, receipt_key: Ed25519PrivateKey) -> None:
+    """Rebind and re-sign the receipt fixture against the fresh Cell evidence.
+
+    Only the two fields that bind the receipt to the Cell evidence change
+    (``cellEvidenceDigest``, ``cellSignerKeyId``); every other payload field
+    is carried over verbatim so the receipt keeps describing the same
+    reviewed run. The signature covers the canonical payload JSON, matching
+    ``verify_bundle.verify_receipt``.
+    """
+    path = FIXTURES / "proofgate-receipt.json"
+    receipt = json.loads(path.read_text(encoding="utf-8"))
+    payload = receipt["payload"]
+    payload["cellEvidenceDigest"] = "sha256:" + sha256_hex((FIXTURES / "cell-evidence.json").read_bytes())
+    payload["cellSignerKeyId"] = key_id(cell_key.public_key())
+    signature = receipt_key.sign(canonical(payload))
+    receipt["signatures"] = [
+        {
+            "keyId": key_id(receipt_key.public_key()),
+            "algorithm": "Ed25519",
+            "signature": base64.b64encode(signature).decode("ascii"),
+        }
+    ]
+    path.write_bytes((json.dumps(receipt, indent=1) + "\n").encode("utf-8"))
+    print(f"wrote {path.relative_to(ROOT)}")
+
+
 def main() -> int:
     key = serialization.load_pem_private_key(
         (FIXTURES / "cell-evidence-private.pem").read_bytes(), password=None
     )
     if not isinstance(key, Ed25519PrivateKey):
         raise SystemExit("fixture private key is not Ed25519")
+    receipt_key = serialization.load_pem_private_key(
+        (FIXTURES / "proofgate-receipt-private.pem").read_bytes(), password=None
+    )
+    if not isinstance(receipt_key, Ed25519PrivateKey):
+        raise SystemExit("fixture receipt private key is not Ed25519")
 
     positive = build_report("PG-67F9819A", ISSUED_AT)
     write("cell-evidence.json", envelope(canonical(positive), key))
@@ -187,6 +224,7 @@ def main() -> int:
         "cell-evidence-replay.json",
         envelope(canonical(build_report("PG-REPLAY-TENANT", ISSUED_AT)), key),
     )
+    regenerate_receipt(key, receipt_key)
     print("fixtures regenerated; run apps/api/tests/test_verifier_negative.py to verify")
     return 0
 

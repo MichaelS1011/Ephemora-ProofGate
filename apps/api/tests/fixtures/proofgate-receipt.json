@@ -1,1 +1,46 @@
-{"payload": {"abi": "preview1", "asset": "NEAR", "beneficiary": "local-agent.testnet", "cellEvidenceDigest": "sha256:49b8865298db30ccea9e7e2ed212cc154733797ebe0575ec0ae9ca66f48eb9f9", "cellIssuedAt": "2026-11-09T10:09:27.357916+00:00", "cellReportId": "74d6e500f5754a06a25a5818ba279b5a", "cellSignerKeyId": "c625085f77cf55ec", "compiler": "rustc \u00b7 wasm32-wasip1", "decision": "verified; not paid", "guestSha256": "sha256:5df37dfc1190a67b2924ebc5fbed68a5350a8f1ac14ed43669437cc4ce79a174", "inputDigest": "sha256:f8e0ab31ad4f581d5e983d14f1a8db2f62d309eb6f91ea58852f234d03317560", "issuedAt": "2026-11-09T10:09:27.444Z", "jobId": "PG-67F9819A", "language": "rust", "limitations": ["The signature authenticates an operator report, not host integrity or arbitrary program correctness.", "The Cell host report does not itself contain the input or output digest; ProofGate binds the bytes observed by this local service.", "The language label identifies the reviewed local build artifact; Cell attests the module run, not source-language semantics.", "No NEAR contract or transaction is connected in this local preview."], "nonce": "5d3c5f84006746ab95e3e1d4b5dbdfc7", "outputDigest": "sha256:ef30dcea09ffeccfb2f8e244165cc7fe0038bd7a47f19b144f742dcb65318a34", "policyDigest": "sha256:4afb7f6acf128b393264a15b1140cbc3732b8e0d186ef8894535fac2010c2748", "programDigest": "sha256:5df37dfc1190a67b2924ebc5fbed68a5350a8f1ac14ed43669437cc4ce79a174", "resourceUsage": {"fuel": 26154, "memoryMb": null}, "result": "success", "reward": "0.10", "runId": "0f06db7d-0783-4f4d-868d-7d021cd088df", "runtimeProfile": "agent-readonly", "runtimeVersion": "50.0.1", "schema": "proofgate-receipt.v1", "sourceDigest": "sha256:4c55ce85e2136cc33552f6f5dc68bd026aa3e7eef03f85ecd9cdbba7159acf59"}, "signatures": [{"algorithm": "Ed25519", "keyId": "84cd3cf66f0dd7d9", "signature": "LlyJ9Y0mh/jg25iH1rTd0VgB5BkFty5nmDdnlsQZMoaC9XW9LIC+jde5Z2+p4yA468XYXVqBdEdV6Md7qLpwAg=="}]}
+{
+ "payload": {
+  "abi": "preview1",
+  "asset": "NEAR",
+  "beneficiary": "local-agent.testnet",
+  "cellEvidenceDigest": "sha256:4718883d6aa45ec18a9bd4148eba8fecf1f3bc6faebcbb5a193d4e39c17b68e4",
+  "cellIssuedAt": "2026-11-09T10:09:27.357916+00:00",
+  "cellReportId": "74d6e500f5754a06a25a5818ba279b5a",
+  "cellSignerKeyId": "bc1cd537fcc64c9d",
+  "compiler": "rustc \u00b7 wasm32-wasip1",
+  "decision": "verified; not paid",
+  "guestSha256": "sha256:5df37dfc1190a67b2924ebc5fbed68a5350a8f1ac14ed43669437cc4ce79a174",
+  "inputDigest": "sha256:f8e0ab31ad4f581d5e983d14f1a8db2f62d309eb6f91ea58852f234d03317560",
+  "issuedAt": "2026-11-09T10:09:27.444Z",
+  "jobId": "PG-67F9819A",
+  "language": "rust",
+  "limitations": [
+   "The signature authenticates an operator report, not host integrity or arbitrary program correctness.",
+   "The Cell host report does not itself contain the input or output digest; ProofGate binds the bytes observed by this local service.",
+   "The language label identifies the reviewed local build artifact; Cell attests the module run, not source-language semantics.",
+   "No NEAR contract or transaction is connected in this local preview."
+  ],
+  "nonce": "5d3c5f84006746ab95e3e1d4b5dbdfc7",
+  "outputDigest": "sha256:ef30dcea09ffeccfb2f8e244165cc7fe0038bd7a47f19b144f742dcb65318a34",
+  "policyDigest": "sha256:4afb7f6acf128b393264a15b1140cbc3732b8e0d186ef8894535fac2010c2748",
+  "programDigest": "sha256:5df37dfc1190a67b2924ebc5fbed68a5350a8f1ac14ed43669437cc4ce79a174",
+  "resourceUsage": {
+   "fuel": 26154,
+   "memoryMb": null
+  },
+  "result": "success",
+  "reward": "0.10",
+  "runId": "0f06db7d-0783-4f4d-868d-7d021cd088df",
+  "runtimeProfile": "agent-readonly",
+  "runtimeVersion": "50.0.1",
+  "schema": "proofgate-receipt.v1",
+  "sourceDigest": "sha256:4c55ce85e2136cc33552f6f5dc68bd026aa3e7eef03f85ecd9cdbba7159acf59"
+ },
+ "signatures": [
+  {
+   "keyId": "c4749ec100b4cfd9",
+   "algorithm": "Ed25519",
+   "signature": "T//AYKSxJ/8+iKJMn3ypTGW9E8zYLDfku4qN7nsZHPl65eG+dGxzxK/xg3dfrULnqQyFDrS5gfPg7Vu1AZnoCQ=="
+  }
+ ]
+}
