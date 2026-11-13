@@ -118,5 +118,4 @@ required owner-controlled step.
 Use the current Apple 2026 guidance as inspiration for adaptable layout,
 content-first hierarchy, and a restrained floating functional layer. The
 ProofGate expression remains original: evidence is the visual anchor, while
-translucency belongs to navigation. See
-[`UI_IMPLEMENTATION_PLAN.md`](../UI_IMPLEMENTATION_PLAN.md).
+translucency belongs to navigation.

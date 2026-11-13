@@ -24,9 +24,7 @@ configured beneficiary, and only on instruction from the configured verifier.
 
 ## The 90-second story
 
-*[proofgate-90s-explainer.mp4 — drop into README after the repo is made public]*
-
-The film shows the complete causal path with recorded evidence only: a live
+The complete causal path in recorded evidence: a live
 network-capability denial (ENOTSOCK), the real create → run → verify → settle
 loop, the offline verifier passing on committed fixtures and failing on a
 one-byte tamper, the 0.10 NEAR Testnet settlement whose `release_job`
@@ -177,8 +175,8 @@ NEAR_TESTNET_RPC_URL="https://test.rpc.fastnear.com" node testnet.mjs
 ## The full local product loop
 
 Requirements: Python 3.12+, Node.js 22+, Rust with `wasm32-wasip1`, Zig, Go
-1.27.3 (`GOOS=wasip1 GOARCH=wasm`), AssemblyScript 0.28.20, and the owner's
-local Ephemora Cell 1.2.0 candidate (`EPHEMORA_BIN`). ProofGate has run and
+1.27.3 (`GOOS=wasip1 GOARCH=wasm`), AssemblyScript 0.28.20, and an installed
+Ephemora Cell runtime (`EPHEMORA_BIN`). ProofGate has run and
 verified **seven source paths**: Rust, C, Zig, Go, and AssemblyScript as WASI
 Preview1 modules, Python as a WASI 0.2 component, and JavaScript on the Cell
 QuickJS WASI guest — each returning the same checked result and a signed Cell
@@ -195,8 +193,8 @@ cd ../..
 python3 apps/api/keygen.py --out .local/devkeys
 ```
 
-Terminal 1 — loopback-only API with the local Cell executable and development
-keys:
+Terminal 1 — loopback-only API with the local Cell executable and
+development keys:
 
 ```sh
 export EPHEMORA_BIN="/absolute/path/to/ephemora"
@@ -225,16 +223,16 @@ select a language, choose **Run in Ephemora Cell**. Expected result: verified
 output, Cell report ID, signed ProofGate receipt, and `Verified · unpaid` —
 payment stays a separate decision.
 
-Python and JavaScript guest binaries are owner-supplied, digest-checked Cell
-artifacts; a clean checkout does not contain them, and the API rejects a guest
-whose digest does not match the pinned catalog value. Dependency notices:
-[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Python and JavaScript guest binaries are separately licensed, digest-checked
+Cell artifacts; a clean checkout does not contain them, and the API rejects a
+guest whose digest does not match the pinned catalog value. Dependency
+notices: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## What is new for this challenge, and what is baseline
 
-Ephemora Cell is the owner's pre-existing product and an external, separately
-licensed dependency (**BUSL-1.1**); no Cell source was copied or modified
-here. ProofGate is a separate integration prototype that calls the locally
+Ephemora Cell is a pre-existing product and an external, separately licensed
+dependency (**BUSL-1.1**); no Cell source was copied or modified here.
+ProofGate is a separate integration prototype that calls the locally
 installed Cell runtime. Built during the hackathon window:
 
 - the ProofGate adapter, verifier, and signed receipt format;
@@ -248,8 +246,7 @@ installed Cell runtime. Built during the hackathon window:
 
 The new ProofGate work is under BUSL-1.1 in its own [LICENSE](LICENSE);
 evaluation, development, research, and testing are permitted without a fee.
-Full boundaries: [PREEXISTING_CODE.md](PREEXISTING_CODE.md) and
-[`docs/CHALLENGE_STRATEGY.md`](docs/CHALLENGE_STRATEGY.md).
+Full boundaries: [PREEXISTING_CODE.md](PREEXISTING_CODE.md).
 
 ## Reproducibility contract
 
@@ -259,16 +256,15 @@ A clean checkout of the tracked tree reproduces, without `.local/`,
 
 | Command | Expected |
 |---|---|
-| `python3 apps/api/tests/test_verifier_negative.py` | 11 tests (3 run, 8 skip without dev keys); signed fixture bundle verifies |
+| `python3 apps/api/tests/test_verifier_negative.py` | 11 passing; the matrix uses only committed fixture keys, so it runs identically on a clean clone |
 | `python3 apps/api/verify_bundle.py …` | `"verified": true`, every check `pass` |
 | `cargo test` in `apps/near-escrow` | 11 passed; rebuilt WASM matches the pinned SHA-256 |
 | `npm ci && npm run build` in `apps/web` | passes |
 | `npm ci && npm run e2e` in `apps/near-escrow/e2e` | downloads nearcore 2.14.0 (protocol 88), full sandbox flow passes |
 
-Disclosed boundary: the live Cell flow requires the owner's external Cell
-1.2.0 candidate, and the Python/JavaScript guests remain separately licensed,
-owner-supplied artifacts with pinned SHA-256 digests. Recorded Testnet state
-(job PG-16EA8CE4) lives in the local audit store, not in the public tree.
+Disclosed boundary: the live Cell flow requires an external Ephemora Cell
+installation, and the Python/JavaScript guests remain separately licensed
+artifacts with pinned SHA-256 digests.
 
 ## Honest boundaries
 
@@ -292,45 +288,12 @@ Read this before you read the screenshots:
 - The **Challenge page** is an evidence index of recorded events, not a live
   chain connection; it never queries the chain or initiates a transaction.
 
-## Review package
+## Documentation
 
-- [Cell v1.2 audit](CELL_V1_2_AUDIT.md)
-- [Architecture decision 001](DECISION_RECORD_001.md)
-- [Gate plan](GATE_PLAN.md)
-- [UI implementation plan](UI_IMPLEMENTATION_PLAN.md)
-- [Challenge strategy and API check](docs/CHALLENGE_STRATEGY.md)
-- [Demo film and submission materials](docs/DEMO.md)
 - [Code provenance](PREEXISTING_CODE.md)
 - [Third-party notices](THIRD_PARTY_NOTICES.md)
 - [Escrow end-to-end harness](apps/near-escrow/e2e/README.md)
 - [Offline evidence verifier](apps/api/verify_bundle.py)
-- [Work journal](journal/2026-11-08.md)
-
-## NEAR HACKATHON compliance
-
-Rules checked against the official
-[`HACKATHON.md`](https://nearhackathon.com/HACKATHON.md) on 10 Nov 2026
-(re-check at submission time). Testnet-only projects are eligible (Q-010); no
-mandatory partner integrations (Q-011); an original NEAR contract that fits
-the track is enough. Existing product with new NEAR integration is disclosed
-per Q-002/Q-004; baseline is the Cell runtime and product concept, the
-challenge work is the integration listed above.
-
-Required before the deadline (**14 Nov 2026, 23:59 UTC**), each an
-owner-controlled step:
-
-1. make this repository **public**;
-2. publish the **X demo post** (built at NEAR HACKATHON, `@NEARProtocol`,
-   `#NEARHackathon`, video attached — draft in [docs/DEMO.md](docs/DEMO.md));
-3. send the single final payload to
-   `POST https://nearhackathon.com/api/applications` after explicit human
-   confirmation of the exact JSON. No dry-run mode exists; duplicate
-   repositories are rejected; mistakes go through the request-changes form.
-
-The `OPTIONS` check on 9 Nov 2026 returned `204` with
-`Allow: GET, HEAD, OPTIONS, POST`; no application `POST` has been sent, and
-no submission has been made. Nothing in this repository has been published,
-posted, or submitted without its owner-controlled step.
 
 ---
 

@@ -1167,14 +1167,9 @@ h1 {
 /* Recorded challenge evidence */
 .challenge-proof-banner { display: flex; align-items: center; gap: 13px; padding: 17px 19px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); box-shadow: var(--shadow-card); }
 .challenge-proof-icon { width: 40px; height: 40px; display: grid; place-items: center; flex: none; border-radius: 13px; background: var(--accent-soft); color: var(--accent); }
-.challenge-publication-note { display: flex; align-items: center; gap: 9px; padding: 11px 14px; border: 1px solid color-mix(in srgb, var(--warning) 23%, var(--hairline)); border-radius: 12px; background: var(--warning-soft); color: var(--warning); font-size: var(--text-sm); line-height: 1.45; }
-.challenge-publication-note svg { flex: none; }
-.challenge-publication-note b { color: var(--ink-soft); font-weight: 650; }
 .challenge-proof-banner > div { min-width: 0; flex: 1; }
 .challenge-proof-banner b { color: var(--ink); font-size: var(--text-base); }
 .challenge-proof-banner p { margin: 3px 0 0; color: var(--muted); font-size: var(--text-sm); line-height: 1.5; }
-.challenge-repro-note { display: flex; align-items: flex-start; gap: 9px; margin: 13px 0 0 !important; padding: 11px 12px; border-left: 3px solid var(--warning); border-radius: 0 9px 9px 0; background: var(--warning-soft); color: var(--warning) !important; font-size: var(--text-sm) !important; line-height: 1.5; }
-.challenge-repro-note svg { flex: none; margin-top: 1px; }
 .challenge-proof-flow { display: grid; gap: 14px; }
 .challenge-step { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 13px; padding: 20px 22px; }
 .challenge-step-marker { position: relative; display: flex; justify-content: center; }
@@ -1227,7 +1222,6 @@ h1 {
   .sample-disclosure { padding: 11px 12px; }
   .challenge-proof-banner { align-items: flex-start; flex-wrap: wrap; padding: 15px; }
   .challenge-proof-banner > .badge { margin-left: 53px; }
-  .challenge-publication-note { align-items: flex-start; font-size: 11px; }
   .challenge-step { grid-template-columns: 27px minmax(0, 1fr); gap: 9px; padding: 16px 13px; }
   .challenge-step-marker > span { width: 25px; height: 25px; }
   .challenge-step-marker::after { top: 32px; bottom: -20px; }

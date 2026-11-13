@@ -735,7 +735,6 @@ function ChallengeProof({ onNavigate }) {
       <div><b>Recorded evidence, not a live connection</b><p>These events were recorded on NEAR Testnet on 9 November 2026. This screen reads no wallet, does not query the chain, and cannot initiate a transaction.</p></div>
       <Badge tone="neutral" icon="clock">Evidence dated 9 Nov 2026</Badge>
     </section>
-    <div className="challenge-publication-note" role="note"><Icon name="alert" size={15}/><span><b>Judge access depends on publication.</b> The GitHub repository is currently private, so its source and verifier links will not open for external reviewers until the owner makes it public.</span></div>
 
     <section className="challenge-proof-flow" aria-label="Recorded ProofGate execution and settlement evidence">
       <article className="panel challenge-step">
@@ -792,7 +791,6 @@ function ChallengeProof({ onNavigate }) {
       <p>This command checks a committed Cell evidence / ProofGate receipt fixture without Cell or NEAR access. It is deliberately separate from the private Testnet receipt bundle shown above.</p>
       <details className="challenge-command"><summary>Show verifier command</summary><code>{challengeVerifierCommand}</code></details>
       <div className="challenge-link-row"><a className="text-link" href={challengeProofSources.verifier} target="_blank" rel="noreferrer">Offline verifier source <Icon name="external" size={14}/></a><a className="text-link" href={challengeProofSources.offlineEvidence} target="_blank" rel="noreferrer">Open committed evidence fixture <Icon name="external" size={14}/></a><a className="text-link" href={challengeProofSources.offlineReceipt} target="_blank" rel="noreferrer">Open committed receipt fixture <Icon name="external" size={14}/></a></div>
-      <p className="challenge-repro-note"><Icon name="alert" size={14}/>The public remote is private unless the owner changes its visibility. Until that owner-controlled publication step, these source links may not open for judges; the final testnet receipt bundle is also not in the public checkout.</p>
     </section>
 
     <section className="challenge-proof-footer"><Icon name="lock" size={16}/><p>No Mainnet key, live wallet, payout action, or submission is exposed here.</p><button className="text-link" onClick={() => onNavigate('Security')}>Review security boundaries <Icon name="arrow" size={14}/></button></section>
