@@ -12,8 +12,18 @@ referenced below are in [`licenses/`](licenses/).
 | Rust standard library | Linked into the Rust sample and NEAR contract build | MIT OR Apache-2.0; see [RUST-MIT.txt](licenses/RUST-MIT.txt) and [RUST-APACHE-2.0.txt](licenses/RUST-APACHE-2.0.txt) |
 | Zig 0.16.0 runtime and C toolchain | Builds the Zig and C samples | MIT; see [ZIG-MIT.txt](licenses/ZIG-MIT.txt) |
 | AssemblyScript 0.28.20 compiler/runtime | Builds `normalizer-assemblyscript.wasm` | Apache-2.0; see [ASSEMBLYSCRIPT-APACHE-2.0.txt](licenses/ASSEMBLYSCRIPT-APACHE-2.0.txt) |
-| NEAR SDK 5.30.1 | Contract source and runtime | MIT OR Apache-2.0; the source crate also carries its license texts |
-| near-parameters 0.38.0 | Contract unit-test dependency | MIT OR Apache-2.0 |
+| NEAR SDK 5.20.0 | Contract source and runtime | MIT OR Apache-2.0; the source crate also carries its license texts |
+| near-parameters 0.34.7 | Transitive contract unit-test dependency | MIT OR Apache-2.0 |
+| near-workspaces 5.0.0 | Local sandbox end-to-end harness only | MIT AND Apache-2.0 |
+| near-api-js 5.1.1 | Testnet end-to-end signing and RPC client only | MIT AND Apache-2.0 |
+| near-sandbox 0.1.5 (npm wrapper) | Locates and runs the local sandbox binary | MIT |
+| NEAR nearcore 2.14.0 sandbox binary | Local test process; downloaded by `apps/near-escrow/e2e/setup-sandbox.mjs` into ignored `node_modules/` and not stored or distributed by this repository | GPL-3.0 |
+
+The nearcore sandbox binary is a separate GPL-3.0 test program. It is not
+linked into the contract, the API, or the interface, and it is not shipped in
+this repository; the e2e setup downloads it from the official NEAR build bucket
+to a local, ignored path. Review this test-only use before redistributing a
+bundle that includes the binary.
 
 The Rust, Go, Zig, and AssemblyScript files in `apps/api/examples/` are source
 programs written for this project. Their generated WASI modules are checked

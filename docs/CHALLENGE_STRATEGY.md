@@ -1,8 +1,8 @@
 # NEAR HACKATHON strategy
 
-**Rules checked:** the live official
-[`HACKATHON.md`](https://nearhackathon.com/HACKATHON.md), re-read 9 Nov 2026.
-Re-check it before publication or submission.
+**Rules checked:** official [`HACKATHON.md`](https://nearhackathon.com/HACKATHON.md)
+and the live challenge landing page, checked 10 Nov 2026. Re-check both at
+publication/submission time because rules and track criteria may change.
 
 ## Tracks
 
@@ -26,11 +26,14 @@ Show one complete causal path:
    beneficiary, and expiry.
 2. The real Ephemora Cell route runs it; one prohibited capability is denied.
 3. ProofGate validates the actual job-bound evidence and explains every check.
-4. A NEAR Testnet escrow contract accepts one configured verifier release,
-   records the receipt digest, and prevents a second movement. Expiry refunds
-   return funds to the job owner.
+4. The escrow contract accepts one configured verifier release, records the
+   receipt digest, and prevents a second movement. Expiry refunds return funds
+   to the job owner. The local sandbox and the Testnet deployment now prove
+   this path end to end; the public demo still needs the repository, X post,
+   and final submission.
 5. The UI distinguishes `Verified`, transfer pending, `Settled`, and refunded
-   only from final chain state.
+   only from final chain state. A sandbox settlement is labeled `NEAR sandbox`,
+   never as a Mainnet payment.
 
 The demo must also show one failure path, ideally a tampered receipt or a
 forbidden capability. No UI-only state change may stand in for Cell evidence,
@@ -43,10 +46,13 @@ separate it from the new ProofGate work. The challenge entry must demonstrate
 the new NEAR escrow/verifier integration, not present Cell itself as the
 hackathon result.
 
-The official challenge page says Claude Code and Codex screen for
-reproducibility and feature claims before human judging. The README therefore
-needs literal `run this → see this` steps, an expected output for each step,
-and clear labels for anything still simulated.
+The current official rules describe automated Claude Code/Codex screening
+before human judging. Prepare literal `run this → see this` reproduction
+steps and expected outputs; clearly disclose illustrative UI states and the
+external Cell/runtime dependencies a clean checkout cannot reproduce alone.
+The required challenge material also names the official announcement post,
+the rules, the closing demo livestream, and
+`https://nearhackathon.com/api/applications` as the submission endpoint.
 
 ## Challenge API and submission boundary
 
@@ -66,28 +72,46 @@ with `Allow: GET, HEAD, OPTIONS, POST`. No application `POST` was sent. This
 checks endpoint availability and accepted HTTP methods; it does not validate
 a submission body or create a submission.
 
-For chain reads, the official NEAR RPC provider directory lists the Testnet
-endpoint `https://archival-rpc.testnet.near.org` and documents JSON-RPC 2.0
-`POST` requests. A one-request `status` query returned `chain_id: testnet`,
-protocol 88, and `syncing: false`. This is read-only connectivity evidence,
-not a contract interaction or payout. Public shared RPC endpoints must not be
-load-tested.
+For chain reads, the Testnet endpoint `https://test.rpc.fastnear.com` (allowed
+by the local API) answered a one-request `status` query with `chain_id:
+testnet`, protocol 88, and `syncing: false`. The older
+`archival-rpc.testnet.near.org` endpoint now returns HTTP 429 with a
+deprecation warning. This is read-only connectivity evidence, not a contract
+interaction or payout. Public shared RPC endpoints must not be load-tested.
 
-**Current integration gap:** ProofGate's verified Cell jobs remain local and
-unpaid. A read-only `/api/near/status` route and Settings UI now check Testnet
-RPC reachability, but there is no contract-call adapter or finality tracker.
-The challenge's winning path still needs the newly written escrow contract, a
-clean local/sandbox contract check, and—after the required key/transaction
-decision—a real Testnet create/verify/settle demonstration.
+**Current integration state:** the escrow contract passes a full local nearcore
+2.14.0 sandbox run: deploy, funded job, verifier-only release, exact payout,
+attacker and double-release rejection, expiry refund, and pause. The local API
+accepts a confirmed sandbox settlement only from a bridge token holder after
+validating the receipt digest, amount, and beneficiary. The Testnet contract
+is deployed at `escrow-mw956wm0.proofgate-mw952xad.testnet`; documented create,
+release, and refund transactions are in the README. The ProofGate-linked job
+`PG-16EA8CE4` has a final 0.10 Testnet NEAR release recorded in local ignored
+state. Its exact explorer transaction exists, but the real Cell/receipt bundle
+and settlement record are not part of a clean public checkout. Testnet
+accounts are throwaway; no Mainnet key or real funds are used. The local web
+preview is currently disconnected from Cell/API. Read-only
+`/api/near/status` is implemented; the recorded reachability check is past
+operational evidence, not a live check now.
 
 ## Submission boundary
 
-The official rules require a public repository, public X demo post tagged
-`@NEARProtocol` and `#NEARHackathon`, and one final submission by 14 November
-2026 at 23:59 UTC. The human owner controls repository publication, external
-posting and submission. The project files may be prepared in advance; no
-external action is taken by this plan. The project decision record separately
-requires explicit authorization before transaction signing or spending.
+The official rules checked 10 Nov 2026 require a public repository before the
+14 Nov 2026 23:59 UTC deadline, a public X demo post stating the project was
+built at NEAR HACKATHON and tagging `@NEARProtocol` and `#NEARHackathon`, and
+one final `POST` to `https://nearhackathon.com/api/applications`. There is no
+validation-only submission mode. The payload requires the human's real name,
+email, team size, NEAR **Mainnet payout address**, track IDs, public repository
+URL, public X post URL, idea, and consent. The local draft still has `<your
+name>`, `<mainnet payout account>`, and `<public X post URL>` placeholders; no
+submission status has been confirmed, so do not claim it was submitted.
+The official process requires showing the exact payload, waiting for explicit
+owner confirmation, reusing the same `requestId` on retry, and never posting a
+second submission. Owner-controlled work still open: review/update the draft,
+confirm the prize payout address, publish the GitHub repository and demo X
+post, then confirm the exact final API payload. Do not make any external
+change, post, transaction, or submission from this checklist without its
+required owner-controlled step.
 
 ## Design direction
 

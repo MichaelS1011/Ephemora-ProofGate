@@ -1,0 +1,13 @@
+{
+  "name": "proofgate-escrow-e2e",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "setup": "node setup-sandbox.mjs",
+    "e2e": "node setup-sandbox.mjs && node run.mjs"
+  },
+  "dependencies": {
+    "near-api-js": "5.1.1",
+    "near-workspaces": "5.0.0"
+  }
+}

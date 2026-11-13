@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import hmac
 import json
 import os
 import re
@@ -11,10 +12,12 @@ import subprocess
 import tempfile
 import threading
 import uuid
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal, InvalidOperation
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 from urllib.error import URLError
 from urllib.parse import urlparse
 from urllib.request import HTTPRedirectHandler, Request, build_opener
@@ -130,13 +133,28 @@ PROGRAMS = {
         "guest_sha256": "53037972a42c1c562dad6a5162a40e41d16e8b9b9d42f1494e1540a367fe5646",
     },
 }
+PROBE_PROGRAMS = {
+    "denied-network": {
+        "label": "Network denial probe",
+        "kind": "probe",
+        "path": API_DIR / "examples" / "denied-network.wasm",
+        "source": API_DIR / "examples" / "denied-network.c",
+        "compiler": "Zig C compiler · wasm32-wasi",
+        "abi": "preview1",
+        "profile": "agent-readonly",
+        "fuel": MAX_FUEL,
+        "memory_bytes": 134_217_728,
+        "timeout": RUN_TIMEOUT_SECONDS,
+    },
+}
 CELL_BIN = os.environ.get("EPHEMORA_BIN") or shutil.which("ephemora") or ""
 CELL_PRIVATE_KEY = os.environ.get("PROOFGATE_CELL_SIGNING_KEY", "")
 CELL_PUBLIC_KEY = os.environ.get("PROOFGATE_CELL_PUBLIC_KEY", "")
 RECEIPT_PRIVATE_KEY = os.environ.get("PROOFGATE_RECEIPT_SIGNING_KEY", "")
 RECEIPT_PUBLIC_KEY = os.environ.get("PROOFGATE_RECEIPT_PUBLIC_KEY", "")
+BRIDGE_TOKEN = os.environ.get("PROOFGATE_BRIDGE_TOKEN", "")
 PORT = int(os.environ.get("PROOFGATE_PORT", "8000"))
-NEAR_TESTNET_RPC_URL = os.environ.get("NEAR_TESTNET_RPC_URL", "https://archival-rpc.testnet.near.org")
+NEAR_TESTNET_RPC_URL = os.environ.get("NEAR_TESTNET_RPC_URL", "https://test.rpc.fastnear.com")
 ALLOWED_ORIGINS = {
     "http://127.0.0.1:4173",
     "http://127.0.0.1:4174",
@@ -161,7 +179,9 @@ BASE_POLICY = {
 
 
 def policy_for(language: str) -> dict[str, Any]:
-    program = PROGRAMS[language]
+    program = PROGRAMS.get(language) or PROBE_PROGRAMS.get(language)
+    if program is None:
+        raise ApiError(400, "Unknown language.")
     policy = {
         **BASE_POLICY,
         "runtimeProfile": program["profile"],
@@ -178,6 +198,15 @@ def policy_for(language: str) -> dict[str, Any]:
     }
     if program["kind"] == "source-guest":
         policy["interpreterGuestSha256"] = program["guest_sha256"]
+    if language == "denied-network":
+        policy.update(
+            {
+                "id": "proofgate-network-denial-v1",
+                "allowedCapabilities": ["stdout", "ephemeral per-run sandbox"],
+                "deniedCapabilities": ["network socket", "ambient host filesystem", "process spawning", "environment variables"],
+                "source": "ProofGate signed capability probe",
+            }
+        )
     return policy
 
 
@@ -213,15 +242,19 @@ def sha256_hex(value: bytes) -> str:
     return hashlib.sha256(value).hexdigest()
 
 
-def db_connection() -> sqlite3.Connection:
+@contextmanager
+def db_connection() -> Iterator[sqlite3.Connection]:
     DATA_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
     connection = sqlite3.connect(DB_PATH, timeout=10, isolation_level=None)
-    if DB_PATH.exists():
-        os.chmod(DB_PATH, 0o600)
-    connection.row_factory = sqlite3.Row
-    connection.execute("PRAGMA journal_mode=WAL")
-    connection.execute("PRAGMA foreign_keys=ON")
-    return connection
+    try:
+        if DB_PATH.exists():
+            os.chmod(DB_PATH, 0o600)
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA journal_mode=WAL")
+        connection.execute("PRAGMA foreign_keys=ON")
+        yield connection
+    finally:
+        connection.close()
 
 
 def initialize_database() -> None:
@@ -253,6 +286,17 @@ def initialize_database() -> None:
                 job_id TEXT NOT NULL UNIQUE REFERENCES jobs(job_id),
                 accepted_at TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS settlements (
+                job_id TEXT PRIMARY KEY REFERENCES jobs(job_id),
+                network TEXT NOT NULL,
+                contract_id TEXT NOT NULL,
+                receipt_digest TEXT NOT NULL,
+                amount TEXT NOT NULL,
+                beneficiary TEXT NOT NULL,
+                status TEXT NOT NULL,
+                tx_hash TEXT NOT NULL,
+                recorded_at TEXT NOT NULL
+            );
             """
         )
         columns = {item["name"] for item in db.execute("PRAGMA table_info(jobs)").fetchall()}
@@ -260,9 +304,34 @@ def initialize_database() -> None:
             db.execute("ALTER TABLE jobs ADD COLUMN language TEXT NOT NULL DEFAULT 'rust'")
 
 
+def settlement_for(job_id: str) -> dict[str, Any] | None:
+    with db_connection() as db:
+        row = db.execute("SELECT * FROM settlements WHERE job_id = ?", (job_id,)).fetchone()
+    if row is None:
+        return None
+    return {
+        "network": row["network"],
+        "contractId": row["contract_id"],
+        "receiptDigest": row["receipt_digest"],
+        "amount": row["amount"],
+        "beneficiary": row["beneficiary"],
+        "status": row["status"],
+        "txHash": row["tx_hash"],
+        "recordedAt": row["recorded_at"],
+    }
+
+
+def receipt_digest(receipt: dict[str, Any]) -> str:
+    payload = receipt.get("payload")
+    if not isinstance(payload, dict):
+        raise ApiError(422, "The stored receipt has no payload.")
+    return "sha256:" + sha256_hex(canonical_json(payload))
+
+
 def row_to_job(row: sqlite3.Row) -> dict[str, Any]:
     language = row["language"]
-    language_info = PROGRAMS.get(language, {"label": language, "compiler": "unknown"})
+    language_info = PROGRAMS.get(language) or PROBE_PROGRAMS.get(language) or {"label": language, "compiler": "unknown"}
+    settlement = settlement_for(row["job_id"])
     return {
         "id": row["job_id"],
         "name": row["job_name"],
@@ -282,7 +351,9 @@ def row_to_job(row: sqlite3.Row) -> dict[str, Any]:
         "policy": json.loads(row["policy_json"]),
         "policyDigest": row["policy_digest"],
         "error": {"code": row["error_code"], "message": row["error_message"]} if row["error_code"] else None,
-        "settlement": "Not funded",
+        "settlement": settlement,
+        "settled": settlement is not None and settlement["status"] == "Paid",
+        "probe": language in PROBE_PROGRAMS,
         "demo": False,
     }
 
@@ -342,8 +413,14 @@ def _cell_health(force: bool = False) -> dict[str, Any]:
     with _health_lock:
         if not force and _health_cache and now_utc() - _health_cache[0] < timedelta(seconds=30):
             return dict(_health_cache[1])
+        try:
+            keys = _key_pair_matches(CELL_PRIVATE_KEY, CELL_PUBLIC_KEY, "Cell evidence") and _key_pair_matches(
+                RECEIPT_PRIVATE_KEY, RECEIPT_PUBLIC_KEY, "ProofGate receipt"
+            )
+        except (ApiError, OSError):
+            keys = False
         if not CELL_BIN:
-            result = {"connected": False, "cell": {"available": False, "detail": "Set EPHEMORA_BIN to the Cell CLI."}}
+            result = {"connected": False, "cell": {"available": False, "detail": "Set EPHEMORA_BIN to the Cell CLI."}, "signersConfigured": keys}
             _health_cache = (now_utc(), result)
             return result
         try:
@@ -370,12 +447,6 @@ def _cell_health(force: bool = False) -> dict[str, Any]:
             }
         except (OSError, subprocess.TimeoutExpired, json.JSONDecodeError):
             cell = {"available": False, "detail": "Cell health check did not complete."}
-        try:
-            keys = _key_pair_matches(CELL_PRIVATE_KEY, CELL_PUBLIC_KEY, "Cell evidence") and _key_pair_matches(
-                RECEIPT_PRIVATE_KEY, RECEIPT_PUBLIC_KEY, "ProofGate receipt"
-            )
-        except (ApiError, OSError):
-            keys = False
         result = {"connected": cell.get("available") is True and keys, "cell": cell, "signersConfigured": keys}
         _health_cache = (now_utc(), result)
         return dict(result)
@@ -401,7 +472,8 @@ def health_report(force: bool = False) -> dict[str, Any]:
         "connected": status["connected"],
         "cell": status["cell"],
         "signersConfigured": status["signersConfigured"],
-        "network": "NEAR Testnet RPC is available by explicit read-only check; no contract is configured",
+        "settlementBridge": bool(BRIDGE_TOKEN),
+        "network": "NEAR Testnet RPC is available by explicit read-only check; settlement records come only from the local bridge",
         "runnableLanguages": runnable_languages,
         "interpreterLanguages": [
             {
@@ -460,6 +532,36 @@ def list_jobs() -> list[dict[str, Any]]:
     with db_connection() as db:
         rows = db.execute("SELECT * FROM jobs ORDER BY created_at DESC").fetchall()
     return [row_to_job(row) for row in rows]
+
+
+def create_probe_job() -> dict[str, Any]:
+    language = "denied-network"
+    program = PROBE_PROGRAMS[language]
+    if not program["path"].is_file():
+        raise ApiError(503, "The denial probe guest is not built. Run apps/api/build_guests.sh.")
+    job_id = f"PG-{uuid.uuid4().hex[:8].upper()}"
+    nonce = uuid.uuid4().hex
+    created = timestamp()
+    job_policy = policy_for(language)
+    job_policy_digest = policy_digest(job_policy)
+    with db_connection() as db:
+        db.execute(
+            "INSERT INTO jobs (job_id, created_at, job_name, input_text, reward, beneficiary, language, nonce, policy_json, policy_digest, state) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                job_id,
+                created,
+                "Network denial probe",
+                "",
+                "0.00",
+                "security-probe",
+                language,
+                nonce,
+                json.dumps(job_policy, sort_keys=True),
+                job_policy_digest,
+                "Ready",
+            ),
+        )
+    return row_to_job(get_job(job_id))
 
 
 def create_job(payload: dict[str, Any]) -> dict[str, Any]:
@@ -594,7 +696,8 @@ def _validate_report(report: dict[str, Any], job: sqlite3.Row, program: dict[str
         raise ApiError(422, "Cell evidence does not match the required runtime policy: " + ", ".join(mismatches) + ".")
     if report.get("fuel_budget") != program["fuel"]:
         raise ApiError(422, "Cell report fuel budget does not match the job policy.")
-    if evidence.get("tool") != f"normalizer-{language}.wasm":
+    expected_tool = "denied-network.wasm" if language == "denied-network" else f"normalizer-{language}.wasm"
+    if evidence.get("tool") != expected_tool:
         raise ApiError(422, "Cell evidence tool name does not match the selected language artifact.")
     if report.get("warnings") not in (None, []):
         raise ApiError(422, "Cell reported warnings for this execution.")
@@ -638,7 +741,8 @@ def run_job(job_id: str) -> dict[str, Any]:
 
     job = get_job(job_id)
     try:
-        guest = PROGRAMS.get(job["language"])
+        probe = job["language"] in PROBE_PROGRAMS
+        guest = (PROBE_PROGRAMS if probe else PROGRAMS).get(job["language"])
         if guest is None or not _program_artifact_available(guest) or not guest["source"].is_file():
             _set_blocked(job_id, "guest_unavailable", "The selected language guest is no longer available.")
             raise ApiError(503, "The selected language guest is no longer available.")
@@ -649,7 +753,7 @@ def run_job(job_id: str) -> dict[str, Any]:
             raise ApiError(503, "The selected language artifact is not a supported WebAssembly v1 module.")
         with tempfile.TemporaryDirectory(prefix="proofgate-cell-") as temporary:
             work = Path(temporary)
-            module_path = work / f"normalizer-{job['language']}.wasm"
+            module_path = work / ("denied-network.wasm" if probe else f"normalizer-{job['language']}.wasm")
             source_dir = work / "source"
             source_dir.mkdir(mode=0o700)
             input_path = work / "job-input.txt"
@@ -665,15 +769,17 @@ def run_job(job_id: str) -> dict[str, Any]:
                 elif guest["input_mode"] == "json-file":
                     (source_dir / "main.js").write_bytes(source_bytes)
                     (source_dir / "input.json").write_bytes(canonical_json({"text": job["input_text"]}))
-            command = [
-                CELL_BIN, "run", str(module_path), "--stdin", str(input_path),
+            command = [CELL_BIN, "run", str(module_path)]
+            if not probe:
+                command.extend(["--stdin", str(input_path)])
+            command.extend([
                 "--trust", "untrusted", "--profile", guest["profile"],
                 "--fuel", str(guest["fuel"]), "--memory-mb", str(guest["memory_bytes"] // (1024 * 1024)),
                 "--timeout", str(guest["timeout"]), "--max-wasm-bytes", str(MAX_WASM_BYTES),
                 "--abi", guest["abi"], "--json",
                 "--tenant", job_id, "--tenant-book", str(tenant_book),
                 "--evidence", str(evidence_path), "--evidence-key", str(cell_signing_key),
-            ]
+            ])
             if guest["kind"] == "source-guest":
                 command.extend(["--allow-dirs", f"{source_dir}::/work"])
             if job["language"] == "python":
@@ -722,6 +828,41 @@ def run_job(job_id: str) -> dict[str, Any]:
             envelope = json.loads(envelope_bytes)
             report = _parse_cell_report(envelope)
             _validate_report(report, job, guest, source_dir)
+            if probe:
+                if not re.search(r"^SOCK_ACCEPT_ERRNO:57$", process.stderr, flags=re.MULTILINE):
+                    _set_blocked(job_id, "probe_not_denied", "The denial probe did not receive ENOTSOCK.")
+                    raise ApiError(422, "The denial probe did not receive ENOTSOCK.")
+                report_id = report["evidence"]["report_id"]
+                with db_connection() as db:
+                    existing = db.execute("SELECT 1 FROM accepted_reports WHERE report_id = ?", (report_id,)).fetchone()
+                if existing:
+                    _set_blocked(job_id, "replay", "This Cell report ID has already been accepted.")
+                    raise ApiError(409, "This Cell report ID has already been accepted.")
+                probe_result = {
+                    "capability": "network socket",
+                    "wasiErrno": "ENOTSOCK",
+                    "preopens": report["security_baseline"].get("preopens", []),
+                    "cellReportId": report_id,
+                }
+                with db_connection() as db:
+                    db.execute("BEGIN IMMEDIATE")
+                    db.execute(
+                        "INSERT INTO accepted_reports (report_id, job_id, accepted_at) VALUES (?, ?, ?)",
+                        (report_id, job_id, timestamp()),
+                    )
+                    db.execute(
+                        "UPDATE jobs SET state = 'Blocked', output_json = ?, cell_report_id = ?, cell_evidence_json = ?, error_code = ?, error_message = ? WHERE job_id = ? AND state = 'Executing'",
+                        (
+                            json.dumps(probe_result, sort_keys=True),
+                            report_id,
+                            envelope_bytes.decode("utf-8"),
+                            "capability_denied",
+                            "Cell denied the network socket attempt with ENOTSOCK; /sandbox was the only preopen.",
+                            job_id,
+                        ),
+                    )
+                    db.commit()
+                return {"job": row_to_job(get_job(job_id)), "probe": probe_result, "cellEvidence": envelope, "demo": False}
             output_lines = re.findall(r"^RESULT_JSON:(.+)$", process.stderr, flags=re.MULTILINE)
             if len(output_lines) != 1:
                 _set_blocked(job_id, "output_unavailable", "The expected bounded output was not observed exactly once.")
@@ -834,6 +975,55 @@ def get_receipt(job_id: str) -> dict[str, Any]:
     return {"receipt": receipt, "cellEvidence": envelope, "demo": False}
 
 
+def record_settlement(job_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    if not BRIDGE_TOKEN:
+        raise ApiError(503, "The settlement bridge is not configured.")
+    job = get_job(job_id)
+    if job["state"] != "Verified" or not job["receipt_json"]:
+        raise ApiError(409, "Only a verified job with an accepted receipt can be settled.")
+    receipt = json.loads(job["receipt_json"])
+    expected_digest = receipt_digest(receipt)
+    network = payload.get("network")
+    if network not in {"sandbox", "testnet"}:
+        raise ApiError(400, "Settlement network must be sandbox or testnet.")
+    contract_id = payload.get("contractId")
+    if not isinstance(contract_id, str) or not re.fullmatch(r"[a-z0-9._-]{2,64}", contract_id):
+        raise ApiError(400, "Settlement contract ID is invalid.")
+    if payload.get("receiptDigest") != expected_digest:
+        raise ApiError(400, "Settlement receipt digest does not match the accepted receipt.")
+    amount = payload.get("amount")
+    if not isinstance(amount, str) or not re.fullmatch(r"(?:0|[1-9]\d*)(?:\.\d{1,6})?", amount):
+        raise ApiError(400, "Settlement amount is invalid.")
+    try:
+        amount_value = Decimal(amount)
+    except InvalidOperation as exc:
+        raise ApiError(400, "Settlement amount is invalid.") from exc
+    if amount_value <= 0 or amount_value > Decimal("10"):
+        raise ApiError(400, "Settlement amount must be greater than 0 and at most 10 NEAR.")
+    if amount_value != Decimal(job["reward"]):
+        raise ApiError(400, "Settlement amount does not match the job reward.")
+    if payload.get("beneficiary") != job["beneficiary"]:
+        raise ApiError(400, "Settlement beneficiary does not match the job beneficiary.")
+    if payload.get("status") != "Paid":
+        raise ApiError(400, "Only a confirmed Paid settlement can be recorded for a verified job.")
+    tx_hash = payload.get("txHash")
+    if not isinstance(tx_hash, str) or not re.fullmatch(r"[1-9A-HJ-NP-Za-km-z]{43,44}", tx_hash):
+        raise ApiError(400, "Settlement transaction hash is invalid.")
+    recorded = timestamp()
+    with db_connection() as db:
+        db.execute("BEGIN IMMEDIATE")
+        existing = db.execute("SELECT 1 FROM settlements WHERE job_id = ?", (job_id,)).fetchone()
+        if existing is not None:
+            db.rollback()
+            raise ApiError(409, "This job already has a settlement record.")
+        db.execute(
+            "INSERT INTO settlements (job_id, network, contract_id, receipt_digest, amount, beneficiary, status, tx_hash, recorded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (job_id, network, contract_id, expected_digest, amount, job["beneficiary"], "Paid", tx_hash, recorded),
+        )
+        db.commit()
+    return {"job": row_to_job(get_job(job_id)), "settlement": settlement_for(job_id)}
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "ProofGateLocal/0.1"
     sys_version = ""
@@ -919,6 +1109,16 @@ class Handler(BaseHTTPRequestHandler):
             parts = [part for part in self.path.split("?", 1)[0].strip("/").split("/") if part]
             if parts == ["api", "jobs"]:
                 return self._send(201, {"job": create_job(self._body()), "demo": False})
+            if parts == ["api", "probes", "denied-network"]:
+                if int(self.headers.get("Content-Length", "0") or 0) > 0:
+                    self._body()
+                probe_job = create_probe_job()
+                return self._send(201, run_job(probe_job["id"]))
+            if len(parts) == 4 and parts[:2] == ["api", "jobs"] and parts[3] == "settlement":
+                token = self.headers.get("X-ProofGate-Bridge", "")
+                if not BRIDGE_TOKEN or not hmac.compare_digest(token, BRIDGE_TOKEN):
+                    return self._send(403, {"error": "Settlement bridge authorization failed."})
+                return self._send(201, record_settlement(parts[2], self._body()))
             if len(parts) == 4 and parts[:2] == ["api", "jobs"] and parts[3] == "run":
                 if int(self.headers.get("Content-Length", "0")) != 0:
                     return self._send(400, {"error": "Run requests do not accept a body."})

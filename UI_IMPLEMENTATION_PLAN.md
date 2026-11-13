@@ -1,8 +1,12 @@
 # UI implementation plan
 
-**Status:** responsive local-first interface refreshed; interactive Cell flow
-is connected for all seven supported source paths. Full accessibility,
-contrast, and device matrix review remain open.
+**Status:** Apple 2026-inspired interface pass applied and structurally
+verified: skip link and keyboard order, dialog focus trap and focus return,
+accessible names on every button and form field, axe WCAG 2.2 AA scan with 0
+violations across 11 page/view combinations, light/dark and 320–1440 px
+layouts without horizontal overflow, offline/sample states, and a real blocked
+network probe. Native VoiceOver read-through and a reduced-transparency device
+pass remain follow-ups.
 
 ## Product experience
 
@@ -19,7 +23,7 @@ branding.
 | New Execution | Define the job without hidden privileges | Validated runtime, program/input, allowed capabilities, resource limits, reward, recipient, network; permission review before create |
 | Execution Detail | Show the causal chain | Submitted → Sandboxed → Signed → Verified → Settled, with only completed steps active |
 | Receipts | Explain what the evidence says and what it does not prove | Job/run IDs, runtime, digests, signer, signature and policy checks; copy/download evidence |
-| Settlements | Show financial state without optimistic success | Escrow, pending, paid/refund states, recipient, amount, contract, chain, confirmed transaction link |
+| Settlements | Show financial state without optimistic success | Escrow, pending, paid/refund states, recipient, amount, contract, chain, confirmed transaction link; sandbox records are labeled and never linked as a public explorer transaction |
 | Security | Explain policy and denials | Blocked claims, trusted verifier status, capability policies, audit events and exact reasons |
 | Settings | Control safe local preferences | Appearance, Testnet network, exports, runtime metadata; no implicit Mainnet choice |
 
@@ -32,6 +36,9 @@ branding.
   never display `Settled`.
 - `Settled` → final chain confirmation exists and a validated transaction ID
   is available.
+- `Settled · NEAR sandbox` → final local sandbox transfer recorded by the
+  bridge; labeled separately, not a Mainnet payment, and not given an explorer
+  link.
 - `Blocked` or `Needs review` → show the machine-readable reason and safe
   next action.
 - `Demo data — sample values only` → persistent badge on every sample-data
@@ -42,9 +49,11 @@ branding.
 Use the original Ephemora direction with Apple's current 2026 design guidance
 as inspiration: content-first hierarchy, responsive layouts, carefully nested
 geometry, and Liquid Glass-like material only on the functional navigation
-layer. Evidence and audit content stays opaque and readable. Use system fonts
-and original inline SVG marks. Do not use Apple logos, proprietary fonts,
-endorsement language, or pixel-for-pixel branded screens.
+layer. Evidence and audit content stays opaque and readable. The implementation
+uses the SF system-font stack with optical sizing, an 11–40 px type scale,
+sentence-case labels, tabular numerals, custom SF-like inline icons, 44-pt
+controls, and native light/dark semantics. Do not use Apple logos, proprietary
+fonts, endorsement language, or pixel-for-pixel branded screens.
 
 The distinctive product moment is the visible progression from a declared
 policy, through inspected execution evidence, to a separately confirmed
@@ -56,18 +65,22 @@ Apple guidance reviewed for this design: [WWDC26 design guide](https://developer
 [Human Interface Guidelines: Materials](https://developer.apple.com/design/human-interface-guidelines/materials),
 and [Human Interface Guidelines: Layout](https://developer.apple.com/design/human-interface-guidelines/layout).
 
-The first implementation uses the token direction below, then adapts it with
-system typography, readable opaque evidence surfaces, and restrained functional
-translucency. Contrast review remains open:
+The interface now uses the warm Ephemora palette with system typography,
+readable opaque evidence surfaces, and restrained functional translucency. Beige
+frames the workspace, white keeps evidence surfaces crisp, and deep red is the
+brand and action accent. Green is reserved for genuinely successful checks;
+red also communicates blocked states. Light and dark modes preserve the same
+palette identity. The updated principal tokens are:
 
 | Token | Light | Dark |
 |---|---|---|
-| Canvas | `#F5F6FB` | `#10131E` |
-| Surface | `#FFFFFF` | `#1B2130` |
-| Ink | `#161D32` | `#F4F6FF` |
-| Accent | `#4C58DB` | `#9B9DFE` |
-| Success | `#147C58` | `#77E4B6` |
-| Danger | `#BB3148` | `#FF9EAB` |
+| Canvas | `#F2ECE4` | `#171310` |
+| Surface | `#FFFEFC` | `#211B18` |
+| Ink | `#251E1A` | `#F8F2EB` |
+| Accent | `#922B35` | `#F0A7A6` |
+| Action | `#A52C38` | `#A92C38` |
+| Success | `#176242` | `#70D19B` |
+| Danger | `#A52431` | `#FF878B` |
 
 ## Component and copy plan
 
@@ -108,7 +121,14 @@ their ABI and profile. Sample and offline records are labelled. If the API
 drops after a real connection, cached local records are kept distinct from demo
 data and actions are disabled until reconnect.
 
-Still open: keyboard and screen-reader pass, contrast measurement, 320–1440 px
-layout captures, reduced-motion and reduced-transparency review, and one
-explicit blocked run. There is no NEAR transaction or final `Settled` state in
-this interface yet.
+Implemented settlement display: a verified job with a stored bridge record
+shows `Settled`, the network (`NEAR sandbox` or `NEAR Testnet`), contract,
+receipt digest, amount, beneficiary, and transaction hash; a Testnet record
+links to the official explorer, a sandbox record does not. The interface never
+starts a payout and never infers `Settled` from a local click.
+
+Verified: skip link and keyboard order, dialog focus trap and focus return,
+accessible names, axe 0 violations, 320/390/768/920/1280/1440 px widths,
+offline/sample data, reduced-motion durations, and a real blocked network
+probe with ENOTSOCK and `/sandbox` as the only preopen. Follow-ups: a native
+VoiceOver read-through and a reduced-transparency device pass.

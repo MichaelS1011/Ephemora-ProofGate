@@ -26,9 +26,9 @@ release or a clean-checkout installation.
 
 | Item | Observation | What it establishes |
 |---|---|---|
-| Candidate checkout | `/Users/mimiai/ephemora-cell-rc`, branch `release/v1.2.0-rc`, commit `5b8a9055397e390956b6ed53c56255e3a2608775` | Identifies the local candidate inspected |
+| Candidate checkout | `<local Cell candidate checkout>`, branch `release/v1.2.0-rc`, commit `5b8a9055397e390956b6ed53c56255e3a2608775` | Identifies the local candidate inspected |
 | Candidate worktree | 76 modified/untracked status entries, including runtime, security, release, and test paths | Current files do not form a clean immutable release snapshot |
-| Other local checkout | `/Users/mimiai/ephemora-cell`, branch `release/1.2.0-preparation`, commit `13e95a19656b8774c85f885103e52743193cbf06`; runtime CLI/tests also modified | A second local preparation tree, not a clean source of release evidence |
+| Other local checkout | `<second local Cell checkout>`, branch `release/1.2.0-preparation`, commit `13e95a19656b8774c85f885103e52743193cbf06`; runtime CLI/tests also modified | A second local preparation tree, not a clean source of release evidence |
 | Version and license metadata | Candidate `pyproject.toml` declares `1.2.0` and `BUSL-1.1`; its `LICENSE` contains Business Source License 1.1 | Local source metadata only; separate legal/redistribution review is still needed |
 | Release evidence | The candidate docs describe a not-yet-published v1.2.0 artifact set; no `v1.2*` tag was present in the inspected clone | No immutable release artifact or package checksum was available in this audit |
 

@@ -1,6 +1,6 @@
 use near_sdk::store::LookupMap;
 use near_sdk::{
-    env, near, require, AccountId, Gas, NearToken, PanicOnDefault, Promise, PromiseError,
+    env, near, require, AccountId, Gas, NearToken, PanicOnDefault, Promise, PromiseResult,
 };
 use near_sdk::json_types::U64;
 
@@ -157,10 +157,7 @@ impl Contract {
             "Job has no pending transfer"
         );
 
-        let transfer_succeeded = matches!(
-            env::promise_result_checked(0, 0),
-            Ok(_) | Err(PromiseError::TooLong(_))
-        );
+        let transfer_succeeded = matches!(env::promise_result(0), PromiseResult::Successful(_));
         if transfer_succeeded {
             job.status = if job.status == JobStatus::Releasing {
                 JobStatus::Paid

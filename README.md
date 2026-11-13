@@ -1,69 +1,188 @@
 # Ephemora ProofGate
 
-Local policy verification for constrained agent execution, with a NEAR escrow
-prototype.
+**Policy first. Payment last.**
 
-**ProofGate is not a new Cell, execution runtime, or replacement for Cell.** It
-is a separate integration prototype that calls the owner's existing, locally
-installed Ephemora Cell runtime. Cell is maintained in a different repository
-under **BUSL-1.1**; no Cell source has been copied or modified here. The new
-work in this folder is the ProofGate adapter, verifier and receipts, sample
-guest programs, interface, and an undeployed NEAR escrow contract.
+ProofGate pays an AI agent for finished work only after independent evidence
+proves the work was done, under policy, by the reviewed guest. Untrusted code
+runs inside **Ephemora Cell**, a WASI sandbox that records signed evidence of
+what executed. A verifier **outside** the workload checks that evidence
+against the job, the policy, the expected output, freshness, and replay state.
+A **NEAR escrow contract** releases payment exactly once, only to the
+configured beneficiary, and only on instruction from the configured verifier.
 
-The new ProofGate work is under BUSL-1.1 as well, in its own [LICENSE](LICENSE).
-Evaluation, development, research, and testing are permitted without a fee;
-production or business use before the applicable change date requires a
-commercial license. This repository has not been published publicly. The NEAR rules
-accept any project license and require a LICENSE file; using BUSL-1.1 keeps the
-code reviewable for the challenge while preserving the commercial boundary.
+> An agent's word is not proof. ProofGate makes payment a verdict, not a
+> favor — and you can re-run every check yourself.
 
-## Current state
+| | |
+|---|---|
+| **Tracks** | AI Security & Defense (`security`) · Agent Economy (`agents`) |
+| **NEAR** | Original Rust escrow contract, deployed and settled on **NEAR Testnet** |
+| **Testnet contract** | `escrow-mw956wm0.proofgate-mw952xad.testnet` |
+| **On-chain proof** | `release_job` carries the signed receipt digest; 0.10 Testnet NEAR paid to the beneficiary |
+| **Reproduce** | `cargo test` (11 passing) · offline verifier on committed fixtures (17 checks, exit 0; one tampered byte → exit 1) · full local sandbox e2e |
+| **License** | BUSL-1.1 (see [LICENSE](LICENSE)); evaluation, research, and testing permitted |
 
-- **Cell:** the local Cell 1.2.0 candidate is an external dependency; its
-  Wasmtime 50.0.1 runtime identity matches. ProofGate has run and verified
-  seven source paths: Rust, C, Zig, Go, and AssemblyScript as WASI Preview1
-  modules, Python as a WASI 0.2 component, and JavaScript on the Cell QuickJS
-  WASI guest. Each returned the same checked result and a signed Cell report.
-  Profiles and resource ceilings are recorded per language. Python and
-  JavaScript guest binaries are owner-supplied, digest-checked Cell artifacts;
-  they are not included or relicensed by this repository.
-- **NEAR:** the official Testnet JSON-RPC status method responded to a
-  read-only request with `chain_id: testnet` and `syncing: false`. A new Rust
-  escrow contract caps each job at 10 NEAR and implements verifier-only
-  release, single-use state transitions, expiry refund, and failed-transfer
-  recovery. Its 11 local unit checks pass and the contract WASM builds. There
-  is no deployed contract, account signer, funding transaction, or payout yet.
-  The local UI can check the Testnet RPC status; that status route is read-only
-  and does not call a ProofGate contract.
-- **Challenge API:** the live application endpoint is only for final
-  submissions. Its `OPTIONS` response was checked without sending an
-  application. It has no documented dry-run endpoint; do not test it with a
-  sample `POST`.
-- **User interface:** responsive local-first app with light and dark themes,
-  honest demo labels, and separate verified and unpaid states. NEAR actions
-  remain visibly offline until the contract flow is implemented and approved.
+## The 90-second story
 
-The selected tracks are **AI Security & Defense** (`security`) and **Agent
-Economy** (`agents`). The product concept and Cell runtime predate the event;
-the NEAR integration in this repository is the challenge work. See
-[`docs/CHALLENGE_STRATEGY.md`](docs/CHALLENGE_STRATEGY.md) and
-[`PREEXISTING_CODE.md`](PREEXISTING_CODE.md) for exact boundaries.
+*[proofgate-90s-explainer.mp4 — drop into README after the repo is made public]*
 
-## Run the local Cell flow
+The film shows the complete causal path with recorded evidence only: a live
+network-capability denial (ENOTSOCK), the real create → run → verify → settle
+loop, the offline verifier passing on committed fixtures and failing on a
+one-byte tamper, the 0.10 NEAR Testnet settlement whose `release_job`
+arguments carry the receipt digest, and the failure path where denied work
+earns nothing. Testnet only; no Mainnet transaction or real funds at any point.
 
-Requirements: Python 3.12+, Node.js 22+, Rust with the `wasm32-wasip1`
-target, Zig, Go 1.27.3 with `GOOS=wasip1 GOARCH=wasm`, AssemblyScript 0.28.20,
-and the owner's local Ephemora Cell 1.2.0 candidate. The Cell candidate is an
-external, separately licensed dependency; set `EPHEMORA_BIN` to its
-executable. Python and JavaScript require the matching owner-supplied Cell
-guest artifacts and are enabled only when their configured SHA-256 digests
-match the reviewed values. A clean checkout does not contain those binaries.
+## What problem this solves
 
-Install Go 1.27.3 from the [official Go downloads](https://go.dev/dl/) and
-put `go` on `PATH` or set `GO_BIN` to its executable. The build script uses
-`.local/toolchains/go/bin/go` when present, otherwise it checks `PATH`.
+Autonomous agents will earn and spend on their own. Today a buyer can only pay
+on the agent's claim that the job ran: "it worked," "the output is there,"
+"trust me." That is unbounded trust in untrusted code:
 
-From the repository root:
+- A workload can **claim** it ran when it never did, ran the wrong thing, or
+  fabricated plausible output.
+- A workload that holds payment keys can sign its **own payout**.
+- A compromised or malicious guest can exfiltrate data through the network and
+  still present a happy-path result.
+
+ProofGate separates **doing the work** from **proving the work** and moves both
+outside the reach of the workload:
+
+1. **Policy first.** The job, its allowed capabilities, budget, beneficiary,
+   and expiry are fixed before execution. The reviewed guest runs inside
+   Ephemora Cell with per-language ABI, memory, fuel, timeout, and I/O
+   ceilings. A denied capability is a hard stop, not a warning.
+2. **Evidence, not claims.** Cell returns a signed report: program, policy,
+   input, output digests, runtime profile, and the actual outcome — including
+   denied capabilities. The workload never holds the evidence signing key,
+   the verifier key, or any payment key.
+3. **Independent verification.** ProofGate's verifier rejects forged
+   signatures, tampered or stale evidence, tenant mismatch, wrong outputs, and
+   replayed report IDs. Only a fully passing check set produces a signed
+   ProofGate receipt.
+4. **Payment as a verdict.** The NEAR escrow contract accepts a release only
+   from the configured verifier account, pays exactly once, records the
+   receipt digest on-chain, refunds the buyer on expiry, and never marks an
+   unconfirmed transfer as paid.
+
+![Execution overview — one loop: policy, sandbox, proof, payment](docs/assets/overview.png)
+
+## The two outcomes that matter
+
+### 1 · The guest tries the network — the sandbox says no
+
+A reviewed probe guest attempts to open a network socket. Cell returns
+`ENOTSOCK`: the workload has no socket descriptor, and its signed baseline
+lists only `/sandbox` as a preopen. No network request is made. ProofGate
+records the job as **Blocked by policy**, issues **no receipt**, and the
+settlement is **no payout**.
+
+![Network denial probe PG-8EDDD025 — blocked by policy, no receipt, no payout](docs/assets/network-denied.png)
+
+### 2 · The verified job settles on NEAR Testnet
+
+Job `PG-16EA8CE4` ran the reviewed Rust guest through Cell, passed every
+verification check, and settled **0.10 Testnet NEAR** to
+`beneficiary.proofgate-mw952xad.testnet`. `Verified` and `Settled` remain
+distinct states in the product: verification alone never moves funds.
+
+![Verified receipt and settlement panel — 0.10 NEAR, Testnet, confirmed](docs/assets/verified-receipt.png)
+
+On-chain, the release is a single `release_job` call whose arguments carry the
+receipt digest, signed by the verifier account, followed by exactly one
+`Transfer 0.1` to the beneficiary:
+
+![NEAR Testnet explorer — release_job args carry the receipt digest](docs/assets/testnet-explorer.png)
+
+Explorer evidence (Testnet only, throwaway accounts, faucet funds):
+
+| Action | Transaction |
+|---|---|
+| Full contract run — create | [`9wwVd1Bh…6bTv`](https://explorer.testnet.near.org/transactions/9wwVd1BhnvJx9BgLBaBARwWGVwzU79cGQkN2CH9w6bTv) |
+| Full contract run — release | [`9ZXyGg3F…wxGP`](https://explorer.testnet.near.org/transactions/9ZXyGg3FeXpLcHcq16ijvGuQu6MrAzRYhU4cF56ZwxGP) |
+| Full contract run — refund | [`2ugVw8PF…1Ua6`](https://explorer.testnet.near.org/transactions/2ugVw8PFo2t9gr3rvwz1UThbJcVpjHsEKKASSA3w1Ua6) |
+| Job PG-16EA8CE4 — create | [`9CKcAHi2…sa5T`](https://explorer.testnet.near.org/transactions/9CKcAHi2jVLwrV8ABiR36PcXcz9YLRg3A2nsNXc9sa5T) |
+| Job PG-16EA8CE4 — release (0.10 NEAR) | [`2uWSy1DK…mQaK`](https://explorer.testnet.near.org/transactions/2uWSy1DKhvuBnM5QchW9fPKek6V7rLH8Rhpw2tuoMQaK) |
+
+## Trust boundary: three authorities, kept apart
+
+![Security model — authority map and fail-closed guardrails](docs/assets/security.png)
+
+| Authority | What it does | What it never gets |
+|---|---|---|
+| Agent workload (guest) | Runs the declared task under a policy | No payment key, no verifier key, no network |
+| Ephemora Cell | Constrains the guest, reports the real outcome, signs evidence | No payment authority |
+| ProofGate verifier + NEAR escrow | Checks evidence independently; gates one release | Never reachable from inside the guest |
+
+Untrusted code cannot sign its own payout. Guardrails are fail-closed: unknown
+evidence schemas are rejected, repeated Cell reports are rejected, and an
+unconfirmed transaction is never shown as paid.
+
+## Run the verifier yourself — the five-minute path
+
+This is the reviewer's path that needs **no external runtime at all**. Follow
+the API setup below (Python 3.12+ venv + `cryptography`), then:
+
+```sh
+python3 apps/api/tests/test_verifier_negative.py
+```
+
+Expected: **11 passing tests**. The negative matrix covers forged signatures,
+tampered and stale evidence, tenant mismatch, wrong outputs, and replayed
+report IDs.
+
+```sh
+python3 apps/api/verify_bundle.py \
+  --evidence apps/api/tests/fixtures/cell-evidence.json \
+  --receipt apps/api/tests/fixtures/proofgate-receipt.json \
+  --cell-key apps/api/tests/fixtures/cell-evidence-public.pem \
+  --receipt-key apps/api/tests/fixtures/proofgate-receipt-public.pem \
+  --expect-tenant PG-67F9819A \
+  --input apps/api/tests/fixtures/input.txt \
+  --output apps/api/tests/fixtures/output.json \
+  --now 2026-11-09T10:09:57Z
+```
+
+Expected: `"verified": true`, every check `pass`, **17 checks passed · exit
+0**. Now change one byte — append a single space to
+`apps/api/tests/fixtures/output.json` and re-run: the `outputDigest` check
+fails and the verifier exits 1. One tampered byte, and the proof collapses.
+
+## Run the escrow contract
+
+```sh
+cd apps/near-escrow
+cargo test          # 11 contract unit checks
+cargo build --target wasm32-unknown-unknown --release
+# WASM SHA-256: da2a8d36361f4284a5540a041ad0aa14cfc3654ef87c0caf1f67b23151dd453e
+cd e2e
+npm install
+npm run e2e         # local nearcore 2.14.0 sandbox (protocol 88), no accounts, no funds
+```
+
+The sandbox e2e proves the full chain path: deploy, funded job, verifier-only
+release, exact beneficiary payout, **attacker release rejected**, **double
+release rejected**, expiry refund, and pause enforcement. See
+[`apps/near-escrow/e2e/README.md`](apps/near-escrow/e2e/README.md).
+
+The same contract runs on NEAR Testnet. To replay the Testnet flow with your
+own throwaway accounts:
+
+```sh
+cd apps/near-escrow/e2e
+node create-testnet-master.mjs
+NEAR_TESTNET_RPC_URL="https://test.rpc.fastnear.com" node testnet.mjs
+```
+
+## The full local product loop
+
+Requirements: Python 3.12+, Node.js 22+, Rust with `wasm32-wasip1`, Zig, Go
+1.27.3 (`GOOS=wasip1 GOARCH=wasm`), AssemblyScript 0.28.20, and the owner's
+local Ephemora Cell 1.2.0 candidate (`EPHEMORA_BIN`). ProofGate has run and
+verified **seven source paths**: Rust, C, Zig, Go, and AssemblyScript as WASI
+Preview1 modules, Python as a WASI 0.2 component, and JavaScript on the Cell
+QuickJS WASI guest — each returning the same checked result and a signed Cell
+report under recorded per-language profiles and resource ceilings.
 
 ```sh
 python3 -m venv .venv
@@ -76,13 +195,8 @@ cd ../..
 python3 apps/api/keygen.py --out .local/devkeys
 ```
 
-To enable the two interpreter paths, set `PROOFGATE_PYTHON_GUEST` and
-`PROOFGATE_JAVASCRIPT_GUEST` to the separately licensed Cell guest files. The
-API rejects a guest whose digest does not match the pinned value in its
-catalog. Dependency notices are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
-
-In one terminal, start the loopback-only API with the local Cell executable and
-development keys:
+Terminal 1 — loopback-only API with the local Cell executable and development
+keys:
 
 ```sh
 export EPHEMORA_BIN="/absolute/path/to/ephemora"
@@ -93,11 +207,8 @@ export PROOFGATE_RECEIPT_PUBLIC_KEY="$PWD/.local/devkeys/proofgate-receipt-publi
 python3 apps/api/proofgate_api.py
 ```
 
-To reproduce the network-capability denial independently of the UI, build the
-guest and run the signed probe from a second terminal with the same Cell and
-evidence-key paths. The guest attempts `sock_accept` on stdin; Cell returns
-`ENOTSOCK` because the workload has no socket descriptor, and its signed
-baseline lists only `/sandbox` as a preopen. No network request is made.
+Terminal 2 — reproduce the network-capability denial headlessly, independent
+of the UI:
 
 ```sh
 export EPHEMORA_BIN="/absolute/path/to/ephemora"
@@ -109,55 +220,77 @@ python3 apps/api/check_denied_network.py
 Expected output contains `"result":"verified"`, `"wasiErrno":"ENOTSOCK"`,
 `"preopens":["/sandbox"]`, and `"cellEvidenceSignature":"verified"`.
 
-In another terminal, start the interface:
+Terminal 3 — the interface (`cd apps/web && npm run dev`): create a job,
+select a language, choose **Run in Ephemora Cell**. Expected result: verified
+output, Cell report ID, signed ProofGate receipt, and `Verified · unpaid` —
+payment stays a separate decision.
 
-```sh
-cd apps/web && npm run dev
-```
+Python and JavaScript guest binaries are owner-supplied, digest-checked Cell
+artifacts; a clean checkout does not contain them, and the API rejects a guest
+whose digest does not match the pinned catalog value. Dependency notices:
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
-Open the local URL printed by Vite, create a job, select an available language,
-then choose **Run in Ephemora Cell**. Expected result: a verified output, Cell
-report ID, signed ProofGate receipt, and `Verified · unpaid` status. Every
-language uses its own recorded ABI, runtime profile, memory, fuel, timeout,
-and I/O budgets. Python and JavaScript run their reviewed source through the
-Cell interpreter guest; the host Python and Node.js runtimes do not execute the
-job source.
+## What is new for this challenge, and what is baseline
 
-Development keys and the SQLite database stay under ignored `.local/` paths.
-Never reuse these keys for production or a NEAR account.
+Ephemora Cell is the owner's pre-existing product and an external, separately
+licensed dependency (**BUSL-1.1**); no Cell source was copied or modified
+here. ProofGate is a separate integration prototype that calls the locally
+installed Cell runtime. Built during the hackathon window:
 
-## Build and check the NEAR escrow contract
+- the ProofGate adapter, verifier, and signed receipt format;
+- the original Rust NEAR escrow contract (capped jobs, verifier-only release,
+  single-use state transitions, expiry refund, pause, failed-transfer
+  recovery) and the settlement bridge;
+- the sample guest programs across seven languages;
+- the React interface and the Challenge evidence page;
+- the offline evidence/receipt verifier, negative test matrix, and the local
+  nearcore sandbox harness.
 
-From the repository root:
+The new ProofGate work is under BUSL-1.1 in its own [LICENSE](LICENSE);
+evaluation, development, research, and testing are permitted without a fee.
+Full boundaries: [PREEXISTING_CODE.md](PREEXISTING_CODE.md) and
+[`docs/CHALLENGE_STRATEGY.md`](docs/CHALLENGE_STRATEGY.md).
 
-```sh
-cd apps/near-escrow
-cargo test
-cargo build --target wasm32-unknown-unknown --release
-```
+## Reproducibility contract
 
-The first command runs the local contract unit checks. The second produces
-`target/wasm32-unknown-unknown/release/proofgate_escrow.wasm`. This artifact has
-not been deployed or exercised by a NEAR sandbox or Testnet transaction.
+A clean checkout of the tracked tree reproduces, without `.local/`,
+`node_modules/`, `target/`, or the external Cell artifact (recorded 9 Nov
+2026):
 
-## NEAR HACKATHON compliance
+| Command | Expected |
+|---|---|
+| `python3 apps/api/tests/test_verifier_negative.py` | 11 tests (3 run, 8 skip without dev keys); signed fixture bundle verifies |
+| `python3 apps/api/verify_bundle.py …` | `"verified": true`, every check `pass` |
+| `cargo test` in `apps/near-escrow` | 11 passed; rebuilt WASM matches the pinned SHA-256 |
+| `npm ci && npm run build` in `apps/web` | passes |
+| `npm ci && npm run e2e` in `apps/near-escrow/e2e` | downloads nearcore 2.14.0 (protocol 88), full sandbox flow passes |
 
-The official rules allow existing products when the new NEAR integration is
-built during the event window. Testnet-only projects are eligible; mandatory
-partner integrations are not required; an original NEAR contract that fits the
-track is enough. A public repository, public X demo post with
-`@NEARProtocol` and `#NEARHackathon`, and one final submission are required by
-**14 November 2026, 23:59 UTC**.
+Disclosed boundary: the live Cell flow requires the owner's external Cell
+1.2.0 candidate, and the Python/JavaScript guests remain separately licensed,
+owner-supplied artifacts with pinned SHA-256 digests. Recorded Testnet state
+(job PG-16EA8CE4) lives in the local audit store, not in the public tree.
 
-The challenge submission API is
-`POST https://nearhackathon.com/api/applications`. A successful request saves
-the project's one submission; duplicate repositories are rejected. The API
-documentation defines no validation-only or dry-run mode. Required human
-details, personal data, and consent must be confirmed before sending the exact
-payload. No application has been submitted.
+## Honest boundaries
 
-No public release, X post, transaction signing, spending, or final application
-submission has been performed.
+Read this before you read the screenshots:
+
+- **Testnet, not Mainnet.** Every transaction is NEAR Testnet with throwaway
+  accounts and faucet funds. No Mainnet key, transaction, or real spending
+  exists. `Verified` and `Settled` are separate states, and `Settled`
+  appears only from a recorded, final bridge result.
+- **Controls, not certifications.** The demonstrated controls are constrained
+  execution, a denied network attempt, job-bound signed-evidence checks,
+  verifier-gated release, and expiry refund. There is no audit or
+  certification evidence for GDPR, SOC 2, or ISO 27001 in this repository, and
+  none is claimed.
+- **A receipt authenticates a statement.** It does not prove arbitrary program
+  correctness or host integrity. The off-chain verifier remains responsible
+  for validating Cell evidence; the contract records the approved digest.
+- **Illustrative UI states** (sample jobs in the tour) are labeled
+  `Demo data` or `Illustrative`; product evidence uses unaltered screenshots
+  of recorded runs.
+- The **Challenge page** is an evidence index of recorded events, not a live
+  chain connection; it never queries the chain or initiates a transaction.
 
 ## Review package
 
@@ -166,19 +299,40 @@ submission has been performed.
 - [Gate plan](GATE_PLAN.md)
 - [UI implementation plan](UI_IMPLEMENTATION_PLAN.md)
 - [Challenge strategy and API check](docs/CHALLENGE_STRATEGY.md)
+- [Demo film and submission materials](docs/DEMO.md)
 - [Code provenance](PREEXISTING_CODE.md)
 - [Third-party notices](THIRD_PARTY_NOTICES.md)
+- [Escrow end-to-end harness](apps/near-escrow/e2e/README.md)
+- [Offline evidence verifier](apps/api/verify_bundle.py)
 - [Work journal](journal/2026-11-08.md)
 
-## Safety boundary
+## NEAR HACKATHON compliance
 
-- Only the NEAR Testnet is in scope for the prototype; Mainnet is never
-  selected implicitly.
-- The untrusted workload never receives verifier or payment signing keys.
-- A signed receipt authenticates a statement; it does not prove arbitrary
-  program correctness or host integrity.
-- `Verified` and `Settled` are separate states. Show `Settled` only after final
-  chain confirmation.
-- Offline sample data must carry a persistent `Demo data` label.
-- The escrow contract records a verifier-approved receipt digest; the
-  off-chain verifier remains responsible for validating Cell evidence.
+Rules checked against the official
+[`HACKATHON.md`](https://nearhackathon.com/HACKATHON.md) on 10 Nov 2026
+(re-check at submission time). Testnet-only projects are eligible (Q-010); no
+mandatory partner integrations (Q-011); an original NEAR contract that fits
+the track is enough. Existing product with new NEAR integration is disclosed
+per Q-002/Q-004; baseline is the Cell runtime and product concept, the
+challenge work is the integration listed above.
+
+Required before the deadline (**14 Nov 2026, 23:59 UTC**), each an
+owner-controlled step:
+
+1. make this repository **public**;
+2. publish the **X demo post** (built at NEAR HACKATHON, `@NEARProtocol`,
+   `#NEARHackathon`, video attached — draft in [docs/DEMO.md](docs/DEMO.md));
+3. send the single final payload to
+   `POST https://nearhackathon.com/api/applications` after explicit human
+   confirmation of the exact JSON. No dry-run mode exists; duplicate
+   repositories are rejected; mistakes go through the request-changes form.
+
+The `OPTIONS` check on 9 Nov 2026 returned `204` with
+`Allow: GET, HEAD, OPTIONS, POST`; no application `POST` has been sent, and
+no submission has been made. Nothing in this repository has been published,
+posted, or submitted without its owner-controlled step.
+
+---
+
+*Evidence authenticates a statement. It does not prove arbitrary program
+correctness.* — Ephemora ProofGate · built at NEAR HACKATHON
