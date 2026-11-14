@@ -1,0 +1,12 @@
+# SHA-256 manifest for the guest modules committed under apps/api/examples/.
+# Verify from the repository root:
+#   shasum -a 256 -c apps/api/examples/CHECKSUMS.txt
+# normalizer-rust.wasm is the exact program the live Testnet settlement
+# PG-73D0D44B executed; its digest matches the signed receipt's programDigest
+# (see apps/api/tests/fixtures/live/proofgate-receipt.json).
+43233af0ef08a3ac05d2c61744685db0859bfee0f25d840bdfd1ee0e5947dd24  apps/api/examples/denied-network.wasm
+d8d2911ec28e7019c0b9ebf0bdffb584bd462e1eb1411e3be3271e1a882d24ca  apps/api/examples/normalizer-assemblyscript.wasm
+f27954b32c64da4dd17fc06c902062c2c29129d4775fa70cf89826c77ffacce6  apps/api/examples/normalizer-c.wasm
+111f1b13c26a310b623e03773563fc75473ee04f143984d603bf01cdd98f0639  apps/api/examples/normalizer-go.wasm
+5df37dfc1190a67b2924ebc5fbed68a5350a8f1ac14ed43669437cc4ce79a174  apps/api/examples/normalizer-rust.wasm
+ca5f448aabfbacef024476b7a270c2e318054518026ab467d54985876bf63e40  apps/api/examples/normalizer-zig.wasm

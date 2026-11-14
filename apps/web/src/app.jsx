@@ -79,6 +79,7 @@ function mapApiJob(job) {
 }
 
 const challengeVerifierCommand = 'python3 apps/api/verify_bundle.py --evidence apps/api/tests/fixtures/cell-evidence.json --receipt apps/api/tests/fixtures/proofgate-receipt.json --cell-key apps/api/tests/fixtures/cell-evidence-public.pem --receipt-key apps/api/tests/fixtures/proofgate-receipt-public.pem --expect-tenant PG-67F9819A --input apps/api/tests/fixtures/input.txt --output apps/api/tests/fixtures/output.json --now 2026-11-09T10:09:57Z';
+const challengeLiveVerifierCommand = 'python3 apps/api/verify_bundle.py --evidence apps/api/tests/fixtures/live/cell-evidence.json --receipt apps/api/tests/fixtures/live/proofgate-receipt.json --cell-key apps/api/tests/fixtures/live/cell-evidence-public.pem --receipt-key apps/api/tests/fixtures/live/proofgate-receipt-public.pem --expect-tenant PG-73D0D44B --input apps/api/tests/fixtures/live/input.txt --output apps/api/tests/fixtures/live/output.json --now 2026-11-13T23:16:00Z';
 const challengeChecklist = [
   ['Public GitHub repository', 'Required before 14 Nov 2026 · 23:59 UTC'],
   ['Public X demo post + video', 'Say built at NEAR HACKATHON; tag @NEARProtocol and #NEARHackathon'],
@@ -92,6 +93,8 @@ const challengeProofSources = {
   fixtures: 'https://github.com/MichaelS1011/Ephemora-ProofGate/tree/main/apps/api/tests/fixtures',
   offlineEvidence: 'https://github.com/MichaelS1011/Ephemora-ProofGate/blob/main/apps/api/tests/fixtures/cell-evidence.json',
   offlineReceipt: 'https://github.com/MichaelS1011/Ephemora-ProofGate/blob/main/apps/api/tests/fixtures/proofgate-receipt.json',
+  liveEvidence: 'https://github.com/MichaelS1011/Ephemora-ProofGate/blob/main/apps/api/tests/fixtures/live/cell-evidence.json',
+  liveReceipt: 'https://github.com/MichaelS1011/Ephemora-ProofGate/blob/main/apps/api/tests/fixtures/live/proofgate-receipt.json',
 };
 
 const pageCopy = {
@@ -725,24 +728,24 @@ function Settlements({ jobs, apiOnline, recordsAreLocal, onOpenJob }) {
 
 function ChallengeProof({ onNavigate }) {
   const transactions = [
-    { label: 'Create escrow job', id: '9CKcAHi2jVLwrV8ABiR36PcXcz9YLRg3A2nsNXc9sa5T' },
-    { label: 'Release after verified receipt', id: '2uWSy1DKhvuBnM5QchW9fPKek6V7rLH8Rhpw2tuoMQaK' },
-    { label: 'Separate contract flow · expiry refund', id: '2ugVw8PFo2t9gr3rvwz1UThbJcVpjHsEKKASSA3w1Ua6' },
+    { label: 'Create escrow job', id: '4dT5X1qmaVeBmYpLiQEnF9MWGDdRteJREvGDFuc9mwHD' },
+    { label: 'Release after verified receipt', id: 'kkByopop4xEhGqiZhsNGr29GBpNhvzhbFu2pb7GS8kf' },
+    { label: 'Separate contract flow · expiry refund', id: 'GTi73Y5Zt6WccKki2C2FJKoGHctLD9E7H5nm8zVygek4' },
   ];
   return <div className="content-stack challenge-proof">
     <section className="challenge-proof-banner">
       <span className="challenge-proof-icon"><Icon name="receipt" size={21}/></span>
-      <div><b>Recorded evidence, not a live connection</b><p>These events were recorded on NEAR Testnet on 9 November 2026. This screen reads no wallet, does not query the chain, and cannot initiate a transaction.</p></div>
-      <Badge tone="neutral" icon="clock">Evidence dated 9 Nov 2026</Badge>
+      <div><b>Recorded evidence, not a live connection</b><p>These events were recorded on NEAR Testnet on 13 November 2026. This screen reads no wallet, does not query the chain, and cannot initiate a transaction.</p></div>
+      <Badge tone="neutral" icon="clock">Evidence dated 13 Nov 2026 (UTC)</Badge>
     </section>
 
     <section className="challenge-proof-flow" aria-label="Recorded ProofGate execution and settlement evidence">
       <article className="panel challenge-step">
         <div className="challenge-step-marker"><span>1</span></div>
         <div className="challenge-step-body">
-          <div className="challenge-step-heading"><div><span className="section-kicker">Successful execution · PG-16EA8CE4</span><h2>Cell ran the reviewed Rust workload</h2></div><Badge tone="neutral">Testnet-linked job</Badge></div>
-          <p>The recorded output was <code>{'{"normalized":"proofgate settles on testnet","wordCount":4}'}</code>. Cell report <code>a8af9e3b6ad34ed9930873dac4a8b24d</code>. The job was verified but still unpaid at this point.</p>
-          <dl className="challenge-facts"><div><dt>Job created · UTC</dt><dd><time dateTime="2026-11-09T10:56:51.019Z">9 Nov 2026, 10:56:51 UTC</time></dd></div><div><dt>Policy digest</dt><dd className="mono">4afb7f6acf128b393264a15b1140cbc3732b8e0d186ef8894535fac2010c2748</dd></div><div><dt>Runtime</dt><dd>Rust · WASI Preview1 · agent-readonly</dd></div></dl>
+          <div className="challenge-step-heading"><div><span className="section-kicker">Successful execution · PG-73D0D44B</span><h2>Cell ran the reviewed Rust workload</h2></div><Badge tone="neutral">Testnet-linked job</Badge></div>
+          <p>The recorded output was <code>{'{"normalized":"prove first verify second settle trustless on near testnet.","wordCount":9}'}</code>. Cell report <code>92b6bd22e7e2446ebb5faf3dd7ae4c6a</code>. The job was verified but still unpaid at this point.</p>
+          <dl className="challenge-facts"><div><dt>Job created · UTC</dt><dd><time dateTime="2026-11-13T23:14:33.124Z">13 Nov 2026, 23:14:33 UTC</time></dd></div><div><dt>Policy digest</dt><dd className="mono">4afb7f6acf128b393264a15b1140cbc3732b8e0d186ef8894535fac2010c2748</dd></div><div><dt>Runtime</dt><dd>Rust · WASI Preview1 · agent-readonly</dd></div></dl>
           <a className="text-link" href={challengeProofSources.README} target="_blank" rel="noreferrer">Project record and demo evidence <Icon name="external" size={14}/></a>
         </div>
       </article>
@@ -750,12 +753,12 @@ function ChallengeProof({ onNavigate }) {
     </section>
 
     <section className="challenge-probe-section" aria-labelledby="challenge-probe-title">
-      <div className="challenge-probe-heading"><div><span className="section-kicker">Separate failure-path evidence · recorded later</span><h2 id="challenge-probe-title">Network denial probe</h2></div><Badge tone="blocked" icon="alert">Blocked · no payment</Badge></div>
+      <div className="challenge-probe-heading"><div><span className="section-kicker">Separate failure-path evidence</span><h2 id="challenge-probe-title">Network denial probe</h2></div><Badge tone="blocked" icon="alert">Blocked · no payment</Badge></div>
       <article className="panel challenge-step challenge-probe-card">
         <div className="challenge-step-body">
-          <div className="challenge-step-heading"><div><span className="section-kicker">Probe PG-C57DEC37</span><h2>Cell denied a network socket</h2></div></div>
-          <p>This was a separate, later run—not part of the paid job. Cell returned <code>ENOTSOCK</code>, with <code>/sandbox</code> as the only preopen. ProofGate recorded <code>capability_denied</code>; no receipt or payment was created for the probe.</p>
-          <dl className="challenge-facts"><div><dt>Probe recorded · UTC</dt><dd><time dateTime="2026-11-09T12:03:55.142Z">9 Nov 2026, 12:03:55 UTC</time></dd></div><div><dt>Cell report</dt><dd className="mono">787c6d1e85b74c63ad9e5f67f8380d82</dd></div><div><dt>Recorded result</dt><dd>ENOTSOCK · /sandbox only</dd></div></dl>
+          <div className="challenge-step-heading"><div><span className="section-kicker">Probe PG-8EDDD025</span><h2>Cell denied a network socket</h2></div></div>
+          <p>This was a separate probe run—not part of the paid job. Cell returned <code>ENOTSOCK</code>, with <code>/sandbox</code> as the only preopen. ProofGate recorded <code>capability_denied</code>; no receipt or payment was created for the probe.</p>
+          <dl className="challenge-facts"><div><dt>Probe recorded · UTC</dt><dd><time dateTime="2026-11-11T09:07:32.185Z">11 Nov 2026, 09:07:32 UTC</time></dd></div><div><dt>Cell report</dt><dd className="mono">0df6edd315654f509ad4902dcf0d3670</dd></div><div><dt>Recorded result</dt><dd>ENOTSOCK · /sandbox only</dd></div></dl>
           <a className="text-link" href={challengeProofSources.challenge} target="_blank" rel="noreferrer">Probe and trust-boundary record <Icon name="external" size={14}/></a>
         </div>
       </article>
@@ -766,8 +769,8 @@ function ChallengeProof({ onNavigate }) {
         <div className="challenge-step-body">
           <div className="challenge-step-heading"><div><span className="section-kicker">Signed ProofGate receipt</span><h2>Evidence bound to the job and beneficiary</h2></div><Badge tone="verified" icon="check">Verified · not paid</Badge></div>
           <p>The signed receipt records “verified; not paid.” Its digest was later supplied to the escrow flow; evidence verification and payment remained separate decisions.</p>
-          <dl className="challenge-facts"><div><dt>Receipt issued · UTC</dt><dd><time dateTime="2026-11-09T10:56:51.378Z">9 Nov 2026, 10:56:51 UTC</time></dd></div><div><dt>Receipt digest</dt><dd className="mono">sha256:d31e510a8d949fb5f9ae212805873b5b0caf8a8a7c200e1f6b1eeaa732b1a25a</dd></div><div><dt>Beneficiary</dt><dd className="mono">beneficiary.proofgate-mw952xad.testnet</dd></div></dl>
-          <p className="challenge-caveat"><Icon name="alert" size={14}/>The Testnet receipt bundle is in ignored local state, not included in the public checkout. The clean-checkout verifier fixture below is a separate reproducibility example (tenant PG-67F9819A), not this Testnet receipt.</p>
+          <dl className="challenge-facts"><div><dt>Receipt issued · UTC</dt><dd><time dateTime="2026-11-13T23:14:33.761Z">13 Nov 2026, 23:14:33 UTC</time></dd></div><div><dt>Receipt digest</dt><dd className="mono">sha256:452fe3d48475a868bb1e3d9bdec914d08fa16dbf390747eb3ba1925e8400a09b</dd></div><div><dt>Beneficiary</dt><dd className="mono">beneficiary.proofgate-mw952xad.testnet</dd></div></dl>
+          <p className="challenge-caveat"><Icon name="alert" size={14}/>This signed bundle is committed under <code>apps/api/tests/fixtures/live/</code> and re-verifiable offline with the command below. The clean-checkout verifier fixture (tenant PG-67F9819A) is a separate reproducibility example, not this Testnet receipt.</p>
         </div>
       </article>
 
@@ -776,9 +779,9 @@ function ChallengeProof({ onNavigate }) {
         <div className="challenge-step-body">
           <div className="challenge-step-heading"><div><span className="section-kicker">NEAR Testnet settlement</span><h2>The verifier-approved job settled once</h2></div><Badge tone="chain" icon="check">Paid · confirmed</Badge></div>
           <p>On Testnet, the escrow contract paid <strong>0.10 NEAR</strong> to the recorded beneficiary. This is testnet-only evidence—not a Mainnet payment. The transaction explorer is the independent chain reference.</p>
-          <dl className="challenge-facts"><div><dt>Settlement recorded · UTC</dt><dd><time dateTime="2026-11-09T10:57:06.670Z">9 Nov 2026, 10:57:06 UTC</time></dd></div><div><dt>Escrow contract</dt><dd className="mono">escrow-mw956wm0.proofgate-mw952xad.testnet</dd></div><div><dt>Network</dt><dd>NEAR Testnet · 0.10 NEAR</dd></div></dl>
+          <dl className="challenge-facts"><div><dt>Settlement recorded · UTC</dt><dd><time dateTime="2026-11-13T23:15:33.846Z">13 Nov 2026, 23:15:33 UTC</time></dd></div><div><dt>Escrow contract</dt><dd className="mono">escrow-mw956wm0.proofgate-mw952xad.testnet</dd></div><div><dt>Network</dt><dd>NEAR Testnet · 0.10 NEAR</dd></div></dl>
           <div className="challenge-link-row">
-            <a className="button button-secondary" href="https://explorer.testnet.near.org/transactions/2uWSy1DKhvuBnM5QchW9fPKek6V7rLH8Rhpw2tuoMQaK" target="_blank" rel="noreferrer">Open paid transaction <Icon name="external" size={14}/></a>
+            <a className="button button-secondary" href="https://explorer.testnet.near.org/transactions/kkByopop4xEhGqiZhsNGr29GBpNhvzhbFu2pb7GS8kf" target="_blank" rel="noreferrer">Open paid transaction <Icon name="external" size={14}/></a>
             <a className="text-link" href={challengeProofSources.challenge} target="_blank" rel="noreferrer">Create, release, and refund records <Icon name="external" size={14}/></a>
           </div>
           <div className="challenge-tx-list">{transactions.map((transaction) => <div key={transaction.id}><span>{transaction.label}</span><a href={`https://explorer.testnet.near.org/transactions/${transaction.id}`} target="_blank" rel="noreferrer">{transaction.id.slice(0, 12)}… <Icon name="external" size={13}/></a></div>)}</div>
@@ -787,10 +790,11 @@ function ChallengeProof({ onNavigate }) {
     </section>
 
     <section className="panel challenge-repro-panel">
-      <div className="panel-heading"><div><span className="section-kicker">Independent reproducibility</span><h2>Verify the clean-checkout fixture offline</h2></div><Badge tone="verified" icon="check">Recorded check · 9 Nov 2026</Badge></div>
-      <p>This command checks a committed Cell evidence / ProofGate receipt fixture without Cell or NEAR access. It is deliberately separate from the private Testnet receipt bundle shown above.</p>
-      <details className="challenge-command"><summary>Show verifier command</summary><code>{challengeVerifierCommand}</code></details>
-      <div className="challenge-link-row"><a className="text-link" href={challengeProofSources.verifier} target="_blank" rel="noreferrer">Offline verifier source <Icon name="external" size={14}/></a><a className="text-link" href={challengeProofSources.offlineEvidence} target="_blank" rel="noreferrer">Open committed evidence fixture <Icon name="external" size={14}/></a><a className="text-link" href={challengeProofSources.offlineReceipt} target="_blank" rel="noreferrer">Open committed receipt fixture <Icon name="external" size={14}/></a></div>
+      <div className="panel-heading"><div><span className="section-kicker">Independent reproducibility</span><h2>Verify the committed bundles offline</h2></div><Badge tone="verified" icon="check">Recorded check · 14 Nov 2026 (UTC)</Badge></div>
+      <p>The first command re-verifies the exact Cell evidence and receipt signed for the Testnet settlement above; the second checks a separate clean-checkout reproducibility fixture. Both run without Cell or NEAR access.</p>
+      <details className="challenge-command" open><summary>Show live settlement verifier command</summary><code>{challengeLiveVerifierCommand}</code></details>
+      <details className="challenge-command"><summary>Show clean-checkout fixture command</summary><code>{challengeVerifierCommand}</code></details>
+      <div className="challenge-link-row"><a className="text-link" href={challengeProofSources.verifier} target="_blank" rel="noreferrer">Offline verifier source <Icon name="external" size={14}/></a><a className="text-link" href={challengeProofSources.liveEvidence} target="_blank" rel="noreferrer">Open live evidence bundle <Icon name="external" size={14}/></a><a className="text-link" href={challengeProofSources.liveReceipt} target="_blank" rel="noreferrer">Open live receipt bundle <Icon name="external" size={14}/></a><a className="text-link" href={challengeProofSources.offlineEvidence} target="_blank" rel="noreferrer">Open fixture evidence <Icon name="external" size={14}/></a><a className="text-link" href={challengeProofSources.offlineReceipt} target="_blank" rel="noreferrer">Open fixture receipt <Icon name="external" size={14}/></a></div>
     </section>
 
     <section className="challenge-proof-footer"><Icon name="lock" size={16}/><p>No Mainnet key, live wallet, payout action, or submission is exposed here.</p><button className="text-link" onClick={() => onNavigate('Security')}>Review security boundaries <Icon name="arrow" size={14}/></button></section>

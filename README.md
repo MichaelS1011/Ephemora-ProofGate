@@ -238,6 +238,12 @@ Preview1 modules, Python as a WASI 0.2 component, and JavaScript on the Cell
 QuickJS WASI guest — each returning the same checked result and a signed Cell
 report under recorded per-language profiles and resource ceilings.
 
+The prebuilt WASI modules under `apps/api/examples/` are pinned by digest in
+[`apps/api/examples/CHECKSUMS.txt`](apps/api/examples/CHECKSUMS.txt); verify
+with `shasum -a 256 -c apps/api/examples/CHECKSUMS.txt` from the repository
+root. `normalizer-rust.wasm` is the exact program the live settlement
+`PG-73D0D44B` ran — its digest matches the signed receipt's `programDigest`.
+
 ```sh
 python3 -m venv .venv
 . .venv/bin/activate
@@ -315,6 +321,7 @@ A clean checkout of the tracked tree reproduces, without `.local/`,
 | `python3 apps/api/tests/test_verifier_negative.py` | 11 passing; the matrix uses only committed fixture keys, so it runs identically on a clean clone |
 | `python3 apps/api/verify_bundle.py …` | `"verified": true`, every check `pass` |
 | `verify_bundle.py` on `apps/api/tests/fixtures/live/` | `"verified": true` on the real settlement; receipt digest matches on-chain `452fe3d4…` |
+| `shasum -a 256 -c apps/api/examples/CHECKSUMS.txt` | all 6 committed guest modules `OK`; Rust module digest equals the live receipt's `programDigest` |
 | `cargo test` in `apps/near-escrow` | 11 passed; rebuilt WASM matches the pinned SHA-256 |
 | `npm ci && npm run build` in `apps/web` | passes |
 | `npm ci && npm run e2e` in `apps/near-escrow/e2e` | downloads nearcore 2.14.0 (protocol 88), full sandbox flow passes |
