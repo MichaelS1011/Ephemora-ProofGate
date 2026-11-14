@@ -2,6 +2,8 @@
 
 **Policy first. Payment last.**
 
+![ProofGate trust flow: an untrusted agent guest holds no payment, verifier, or evidence key; it runs inside the Ephemora Cell, and only the ProofGate verifier across the trust boundary can instruct the NEAR escrow to pay exactly once — a self-signed payout is rejected.](docs/assets/social/social-preview.png)
+
 ProofGate pays an AI agent for finished work only after independent evidence
 proves the work was done, under policy, by the reviewed guest. Untrusted code
 runs inside **Ephemora Cell**, a WASI sandbox that records signed evidence of
@@ -103,6 +105,11 @@ Explorer evidence (Testnet only, throwaway accounts, faucet funds):
 | Job PG-73D0D44B — release (0.10 NEAR) | [`kkByopop…8kf`](https://explorer.testnet.near.org/transactions/kkByopop4xEhGqiZhsNGr29GBpNhvzhbFu2pb7GS8kf) |
 | Escrow refund path — refund on expiry | [`GTi73Y5Z…gek4`](https://explorer.testnet.near.org/transactions/GTi73Y5Zt6WccKki2C2FJKoGHctLD9E7H5nm8zVygek4) |
 
+The signed bundle behind this settlement — the real Cell evidence and receipt
+whose digest went on-chain — is committed under
+`apps/api/tests/fixtures/live/` and can be re-verified offline; see *Verify the
+live settlement offline* below.
+
 ## Trust boundary: three authorities, kept apart
 
 ![Security model — authority map and fail-closed guardrails](docs/assets/security.png)
@@ -148,6 +155,52 @@ to `"wordCount":5` in `apps/api/tests/fixtures/output.json`, and re-run: the
 `outputDigest` check fails and the verifier exits 1 with `"verified": false`.
 One changed value, and the proof collapses. (The verifier hashes the canonical
 JSON, so whitespace-only edits are not tampering — the value itself must change.)
+
+## Verify the live settlement offline
+
+The path above verifies committed test fixtures. The recorded bundle from the
+*actual* Testnet settlement in section 2 — the same input, output, Cell
+evidence, and signed receipt whose digest went on-chain in `release_job` — is
+committed under `apps/api/tests/fixtures/live/`:
+
+```sh
+python3 apps/api/verify_bundle.py \
+  --evidence apps/api/tests/fixtures/live/cell-evidence.json \
+  --receipt apps/api/tests/fixtures/live/proofgate-receipt.json \
+  --cell-key apps/api/tests/fixtures/live/cell-evidence-public.pem \
+  --receipt-key apps/api/tests/fixtures/live/proofgate-receipt-public.pem \
+  --expect-tenant PG-73D0D44B \
+  --input apps/api/tests/fixtures/live/input.txt \
+  --output apps/api/tests/fixtures/live/output.json \
+  --now 2026-11-13T23:16:00Z
+```
+
+Expected: `"verified": true`, all 17 checks `"pass"`, exit 0 — the same
+verifier, now against the real 0.10 Testnet NEAR payment. The canonical-JSON
+SHA-256 of the receipt payload equals the `receipt_digest` argument of the
+on-chain `release_job` transaction (`452fe3d4…` in the table above), so the
+offline verification and the chain agree on the exact same bytes.
+
+You can also cross-check the signing identities yourself. A key ID is the
+first 16 hex characters of SHA-256 over the raw Ed25519 public key; the
+receipt signature carries key ID `6868a3a50319351b` and its `cellSignerKeyId`
+is `15bf4bcd0bb778a4`:
+
+```sh
+python3 - <<'PY'
+import hashlib
+from cryptography.hazmat.primitives import serialization
+for name in ("apps/api/tests/fixtures/live/proofgate-receipt-public.pem",
+             "apps/api/tests/fixtures/live/cell-evidence-public.pem"):
+    key = serialization.load_pem_public_key(open(name, "rb").read())
+    raw = key.public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+    print(name.rsplit("/", 1)[-1], hashlib.sha256(raw).hexdigest()[:16])
+PY
+```
+
+Expected: `proofgate-receipt-public.pem 6868a3a50319351b` and
+`cell-evidence-public.pem 15bf4bcd0bb778a4` — matching the signed receipt, the
+`/api/keys` endpoint of a running local API, and the keys the Cell accepted.
 
 ## Run the escrow contract
 
@@ -261,6 +314,7 @@ A clean checkout of the tracked tree reproduces, without `.local/`,
 |---|---|
 | `python3 apps/api/tests/test_verifier_negative.py` | 11 passing; the matrix uses only committed fixture keys, so it runs identically on a clean clone |
 | `python3 apps/api/verify_bundle.py …` | `"verified": true`, every check `pass` |
+| `verify_bundle.py` on `apps/api/tests/fixtures/live/` | `"verified": true` on the real settlement; receipt digest matches on-chain `452fe3d4…` |
 | `cargo test` in `apps/near-escrow` | 11 passed; rebuilt WASM matches the pinned SHA-256 |
 | `npm ci && npm run build` in `apps/web` | passes |
 | `npm ci && npm run e2e` in `apps/near-escrow/e2e` | downloads nearcore 2.14.0 (protocol 88), full sandbox flow passes |

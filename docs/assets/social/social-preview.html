@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+  @font-face { font-family:'Archivo'; src:url('fonts/archivo-900.ttf') format('truetype'); }
+  @font-face { font-family:'Plex'; src:url('fonts/plex-mono-400.ttf') format('truetype'); font-weight:400; }
+  @font-face { font-family:'Plex'; src:url('fonts/plex-mono-600.ttf') format('truetype'); font-weight:600; }
+  @font-face { font-family:'Plex'; src:url('fonts/plex-mono-700.ttf') format('truetype'); font-weight:700; }
+
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body { width:1280px; height:640px; overflow:hidden; }
+  body {
+    font-family:'Plex',monospace; background:#f2ece1; color:#251e1a; position:relative;
+  }
+  body::before { /* blueprint grid */
+    content:''; position:absolute; inset:0; pointer-events:none;
+    background-image:
+      linear-gradient(rgba(59,43,32,.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(59,43,32,.05) 1px, transparent 1px);
+    background-size:40px 40px;
+  }
+  .kicker {
+    position:absolute; left:88px; top:58px;
+    font-size:15px; font-weight:600; letter-spacing:.16em; color:#7a5200;
+    display:flex; align-items:center; gap:12px;
+  }
+  .kicker .mark {
+    width:24px; height:24px; border:2.5px solid #7a5200; border-radius:6px;
+    display:inline-flex; align-items:center; justify-content:center;
+    font-size:14px; font-weight:700; color:#7a5200; letter-spacing:0;
+  }
+  h1 {
+    position:absolute; left:88px; top:98px; width:580px;
+    font-family:'Archivo',sans-serif; font-weight:900; font-stretch:125%;
+    font-size:58px; line-height:1.08; letter-spacing:-0.015em;
+  }
+  h1 .no { color:#a52431; }
+  .sub {
+    position:absolute; left:88px; top:388px; width:500px;
+    font-size:17.5px; line-height:1.55; color:#4a3f38;
+  }
+  .sub b { color:#251e1a; font-weight:700; }
+  .footline {
+    position:absolute; left:88px; bottom:38px; display:flex; gap:10px;
+    font-size:13px; font-weight:600; color:#5d544d;
+  }
+  .chip { border:1.5px solid rgba(59,43,32,.25); border-radius:999px; padding:5px 13px 4px; background:rgba(255,254,252,.7); }
+  .chip.green { color:#00794f; border-color:rgba(0,121,79,.4); }
+
+  svg { position:absolute; left:0; top:0; }
+  .node-title { font-family:'Plex',monospace; font-size:16px; font-weight:700; fill:#251e1a; letter-spacing:.02em; }
+  .node-sub { font-family:'Plex',monospace; font-size:12.5px; font-weight:400; fill:#6c615a; letter-spacing:.03em; }
+  .flow-label { font-family:'Plex',monospace; font-size:12.5px; font-weight:600; fill:#176242; letter-spacing:.03em; }
+  .denied-label { font-family:'Plex',monospace; font-size:12.5px; font-weight:700; fill:#a52431; letter-spacing:.04em; }
+</style>
+</head>
+<body>
+  <div class="kicker"><span class="mark">✓</span>EPHEMORA&nbsp;PROOFGATE</div>
+  <h1>Untrusted code<br><span class="no">can’t</span> sign its<br>own payout.</h1>
+  <div class="sub">The guest never holds a payment, verifier, or evidence key. Only an <b>independent verifier — outside the sandbox</b> — can tell the escrow to pay, exactly once.</div>
+  <div class="footline">
+    <span class="chip green">release gated by verifier</span>
+    <span class="chip">fail-closed guardrails</span>
+    <span class="chip">digest on-chain</span>
+  </div>
+
+  <svg width="1280" height="640" viewBox="0 0 1280 640" fill="none">
+    <defs>
+      <marker id="arrowGreen" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7.5" markerHeight="7.5" orient="auto-start-reverse">
+        <path d="M0 0 L10 5 L0 10 z" fill="#00794f"/>
+      </marker>
+    </defs>
+
+    <!-- blocked self-payout arc : guest -> escrow, bulging left of the column -->
+    <path d="M 800 144 C 706 200, 706 470, 800 528"
+          stroke="#a52431" stroke-width="2.5" stroke-dasharray="8 7" fill="none" opacity=".85"/>
+    <circle cx="723" cy="336" r="20" fill="#f2ece1" stroke="#a52431" stroke-width="3"/>
+    <path d="M 715 328 L 731 344 M 731 328 L 715 344" stroke="#a52431" stroke-width="3.4" stroke-linecap="round"/>
+    <text class="denied-label" transform="rotate(-90 688 336)" x="688" y="340" text-anchor="middle">tries to sign its own payout — no key, hard stop</text>
+
+    <!-- vertical flow arrows -->
+    <line x1="985" y1="188" x2="985" y2="222" stroke="#00794f" stroke-width="3" marker-end="url(#arrowGreen)"/>
+    <text x="1002" y="210" class="flow-label">runs in</text>
+    <line x1="985" y1="316" x2="985" y2="350" stroke="#00794f" stroke-width="3" marker-end="url(#arrowGreen)"/>
+    <text x="1002" y="330" class="flow-label">signed evidence</text>
+    <line x1="985" y1="444" x2="985" y2="478" stroke="#00794f" stroke-width="3" marker-end="url(#arrowGreen)"/>
+    <text x="1002" y="466" class="flow-label">receipt digest</text>
+
+    <!-- trust boundary between Cell and Verifier -->
+    <line x1="800" y1="336" x2="1200" y2="336" stroke="rgba(59,43,32,.3)" stroke-width="1.6" stroke-dasharray="3 5"/>
+    <text x="812" y="330" class="node-sub" style="letter-spacing:.1em">TRUST BOUNDARY</text>
+
+    <!-- nodes -->
+    <g>
+      <rect x="800" y="100" width="400" height="88" rx="10" fill="#fffefc" stroke="rgba(59,43,32,.3)" stroke-width="1.6"/>
+      <rect x="800" y="100" width="5" height="88" rx="2.5" fill="#a52431"/>
+      <text x="826" y="138" class="node-title">AGENT GUEST</text>
+      <text x="826" y="163" class="node-sub">untrusted · no payment / verifier key</text>
+    </g>
+    <g>
+      <rect x="800" y="228" width="400" height="88" rx="10" fill="#fffefc" stroke="rgba(59,43,32,.3)" stroke-width="1.6"/>
+      <rect x="800" y="228" width="5" height="88" rx="2.5" fill="#7a5200"/>
+      <text x="826" y="266" class="node-title">EPHEMORA CELL</text>
+      <text x="826" y="291" class="node-sub">WASI sandbox · signs what really ran</text>
+    </g>
+    <g>
+      <rect x="800" y="356" width="400" height="88" rx="10" fill="#fffefc" stroke="rgba(59,43,32,.3)" stroke-width="1.6"/>
+      <rect x="800" y="356" width="5" height="88" rx="2.5" fill="#176242"/>
+      <text x="826" y="394" class="node-title">PROOFGATE VERIFIER</text>
+      <text x="826" y="419" class="node-sub">outside the workload · 17 checks</text>
+    </g>
+    <g>
+      <rect x="800" y="484" width="400" height="88" rx="10" fill="#e0f3ea" stroke="#00794f" stroke-width="2"/>
+      <rect x="800" y="484" width="5" height="88" rx="2.5" fill="#00794f"/>
+      <text x="826" y="522" class="node-title">NEAR ESCROW</text>
+      <text x="826" y="547" class="node-sub" style="fill:#00794f;font-weight:600">pays once · 0.10 tNEAR → beneficiary</text>
+    </g>
+  </svg>
+</body>
+</html>
