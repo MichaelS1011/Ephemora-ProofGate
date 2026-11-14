@@ -2,6 +2,12 @@
 
 **Policy first. Payment last.**
 
+[![License: BUSL-1.1](https://img.shields.io/badge/license-BUSL--1.1-blue)](LICENSE)
+![Track: AI Security & Defense](https://img.shields.io/badge/track-AI%20Security%20%26%20Defense-orange)
+![NEAR Testnet](https://img.shields.io/badge/NEAR-Testnet-brightgreen)
+![Sandbox: WASI Preview1](https://img.shields.io/badge/sandbox-WASI%20Preview1-blueviolet)
+![Verifier: offline, no network](https://img.shields.io/badge/verifier-offline%20%C2%B7%20no%20network-green)
+
 ![ProofGate trust flow: an untrusted agent guest holds no payment, verifier, or evidence key; it runs inside the Ephemora Cell, and only the ProofGate verifier across the trust boundary can instruct the NEAR escrow to pay exactly once — a self-signed payout is rejected.](docs/assets/social/social-preview.png)
 
 ProofGate pays an AI agent for finished work only after independent evidence
@@ -149,8 +155,8 @@ python3 apps/api/verify_bundle.py \
   --now 2026-11-09T10:09:57Z
 ```
 
-Expected: `"verified": true`, every check `pass`, **17 checks passed · exit
-0**. Now tamper with the result — change one value, for example `"wordCount":4`
+Expected: the JSON reports `"verified": true` with all 17 check entries at
+`"pass"`, and the process exits 0. Now tamper with the result — change one value, for example `"wordCount":4`
 to `"wordCount":5` in `apps/api/tests/fixtures/output.json`, and re-run: the
 `outputDigest` check fails and the verifier exits 1 with `"verified": false`.
 One changed value, and the proof collapses. (The verifier hashes the canonical
