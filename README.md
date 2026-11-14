@@ -79,10 +79,13 @@ settlement is **no payout**.
 
 ### 2 · The verified job settles on NEAR Testnet
 
-Job `PG-16EA8CE4` ran the reviewed Rust guest through Cell, passed every
-verification check, and settled **0.10 Testnet NEAR** to
-`beneficiary.proofgate-mw952xad.testnet`. `Verified` and `Settled` remain
-distinct states in the product: verification alone never moves funds.
+Job `PG-73D0D44B` (2026-11-13) ran the reviewed Rust guest through Cell, passed
+every verification check, and settled **0.10 Testnet NEAR** to
+`beneficiary.proofgate-mw952xad.testnet`. The same live run also proved the
+negatives: a release from the attacker account was rejected and the job stayed
+`Open`, and a second release attempt was rejected while the job stayed `Paid`.
+`Verified` and `Settled` remain distinct states in the product: verification
+alone never moves funds.
 
 ![Verified receipt and settlement panel — 0.10 NEAR, Testnet, confirmed](docs/assets/verified-receipt.png)
 
@@ -96,11 +99,9 @@ Explorer evidence (Testnet only, throwaway accounts, faucet funds):
 
 | Action | Transaction |
 |---|---|
-| Full contract run — create | [`9wwVd1Bh…6bTv`](https://explorer.testnet.near.org/transactions/9wwVd1BhnvJx9BgLBaBARwWGVwzU79cGQkN2CH9w6bTv) |
-| Full contract run — release | [`9ZXyGg3F…wxGP`](https://explorer.testnet.near.org/transactions/9ZXyGg3FeXpLcHcq16ijvGuQu6MrAzRYhU4cF56ZwxGP) |
-| Full contract run — refund | [`2ugVw8PF…1Ua6`](https://explorer.testnet.near.org/transactions/2ugVw8PFo2t9gr3rvwz1UThbJcVpjHsEKKASSA3w1Ua6) |
-| Job PG-16EA8CE4 — create | [`9CKcAHi2…sa5T`](https://explorer.testnet.near.org/transactions/9CKcAHi2jVLwrV8ABiR36PcXcz9YLRg3A2nsNXc9sa5T) |
-| Job PG-16EA8CE4 — release (0.10 NEAR) | [`2uWSy1DK…mQaK`](https://explorer.testnet.near.org/transactions/2uWSy1DKhvuBnM5QchW9fPKek6V7rLH8Rhpw2tuoMQaK) |
+| Job PG-73D0D44B — create | [`4dT5X1qm…mwHD`](https://explorer.testnet.near.org/transactions/4dT5X1qmaVeBmYpLiQEnF9MWGDdRteJREvGDFuc9mwHD) |
+| Job PG-73D0D44B — release (0.10 NEAR) | [`kkByopop…8kf`](https://explorer.testnet.near.org/transactions/kkByopop4xEhGqiZhsNGr29GBpNhvzhbFu2pb7GS8kf) |
+| Escrow refund path — refund on expiry | [`GTi73Y5Z…gek4`](https://explorer.testnet.near.org/transactions/GTi73Y5Zt6WccKki2C2FJKoGHctLD9E7H5nm8zVygek4) |
 
 ## Trust boundary: three authorities, kept apart
 
@@ -142,9 +143,11 @@ python3 apps/api/verify_bundle.py \
 ```
 
 Expected: `"verified": true`, every check `pass`, **17 checks passed · exit
-0**. Now change one byte — append a single space to
-`apps/api/tests/fixtures/output.json` and re-run: the `outputDigest` check
-fails and the verifier exits 1. One tampered byte, and the proof collapses.
+0**. Now tamper with the result — change one value, for example `"wordCount":4`
+to `"wordCount":5` in `apps/api/tests/fixtures/output.json`, and re-run: the
+`outputDigest` check fails and the verifier exits 1 with `"verified": false`.
+One changed value, and the proof collapses. (The verifier hashes the canonical
+JSON, so whitespace-only edits are not tampering — the value itself must change.)
 
 ## Run the escrow contract
 

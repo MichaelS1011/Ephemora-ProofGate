@@ -86,11 +86,12 @@ accepts a confirmed sandbox settlement only from a bridge token holder after
 validating the receipt digest, amount, and beneficiary. The Testnet contract
 is deployed at `escrow-mw956wm0.proofgate-mw952xad.testnet`; documented create,
 release, and refund transactions are in the README. The ProofGate-linked job
-`PG-16EA8CE4` has a final 0.10 Testnet NEAR release recorded in local ignored
-state. Its exact explorer transaction exists, but the real Cell/receipt bundle
+`PG-73D0D44B` ran through the live API with the real Cell binary and has a
+final 0.10 Testnet NEAR release recorded in local ignored state. Its exact
+explorer transaction exists, but the real Cell/receipt bundle
 and settlement record are not part of a clean public checkout. Testnet
 accounts are throwaway; no Mainnet key or real funds are used. The local web
-preview is currently disconnected from Cell/API. Read-only
+preview runs against the local API and the real Cell route. Read-only
 `/api/near/status` is implemented; the recorded reachability check is past
 operational evidence, not a live check now.
 
