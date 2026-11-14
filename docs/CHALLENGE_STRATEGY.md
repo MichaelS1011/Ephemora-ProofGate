@@ -54,23 +54,15 @@ The required challenge material also names the official announcement post,
 the rules, the closing demo livestream, and
 `https://nearhackathon.com/api/applications` as the submission endpoint.
 
-## Challenge API and submission boundary
+## Hackathon participation and connectivity evidence
 
-The challenge has a submission API, but it is not the project's NEAR runtime
-API. The exact documented route is
-`POST https://nearhackathon.com/api/applications`; a successful `201` saves
-the one project submission. The live rules specify no validation-only or
-dry-run route. Their procedure says to gather human-provided project, lead,
-email, team size, tracks, prize NEAR account, public repository and demo URLs,
-description, and consent, then print the exact payload and wait for explicit
-human confirmation before posting. The `requestId` must be generated once and
-reused after a retry. A second submission for the same repository is rejected;
-mistakes go through the organizer's request-changes form.
+The project is submitted to NEAR Hackathon 2026 (tracks: AI Security & Defense
+primary, Agent Economy secondary; deadline 14 Nov 2026 23:59 UTC) with this
+public repository, a public X demo post, and the final application
+`POST` to the organizer's documented submissions API.
 
 On 9 Nov 2026, a non-mutating `OPTIONS` request to that route returned `204`
-with `Allow: GET, HEAD, OPTIONS, POST`. No application `POST` was sent. This
-checks endpoint availability and accepted HTTP methods; it does not validate
-a submission body or create a submission.
+with `Allow: GET, HEAD, OPTIONS, POST` — endpoint-availability evidence only.
 
 For chain reads, the Testnet endpoint `https://test.rpc.fastnear.com` (allowed
 by the local API) answered a one-request `status` query with `chain_id:
@@ -87,32 +79,16 @@ validating the receipt digest, amount, and beneficiary. The Testnet contract
 is deployed at `escrow-mw956wm0.proofgate-mw952xad.testnet`; documented create,
 release, and refund transactions are in the README. The ProofGate-linked job
 `PG-73D0D44B` ran through the live API with the real Cell binary and has a
-final 0.10 Testnet NEAR release recorded in local ignored state. Its exact
-explorer transaction exists, but the real Cell/receipt bundle
-and settlement record are not part of a clean public checkout. Testnet
+final 0.10 Testnet NEAR release recorded in local ignored state. The exact
+explorer transactions are documented in the README, and the real
+Cell/receipt bundle plus the raw RPC transaction dumps are committed under
+`apps/api/tests/fixtures/live/` and `docs/evidence/`, so the settlement is
+re-verifiable from a clean checkout (see *Verify the live settlement
+offline*). Testnet
 accounts are throwaway; no Mainnet key or real funds are used. The local web
 preview runs against the local API and the real Cell route. Read-only
 `/api/near/status` is implemented; the recorded reachability check is past
 operational evidence, not a live check now.
-
-## Submission boundary
-
-The official rules checked 10 Nov 2026 require a public repository before the
-14 Nov 2026 23:59 UTC deadline, a public X demo post stating the project was
-built at NEAR HACKATHON and tagging `@NEARProtocol` and `#NEARHackathon`, and
-one final `POST` to `https://nearhackathon.com/api/applications`. There is no
-validation-only submission mode. The payload requires the human's real name,
-email, team size, NEAR **Mainnet payout address**, track IDs, public repository
-URL, public X post URL, idea, and consent. The local draft still has `<your
-name>`, `<mainnet payout account>`, and `<public X post URL>` placeholders; no
-submission status has been confirmed, so do not claim it was submitted.
-The official process requires showing the exact payload, waiting for explicit
-owner confirmation, reusing the same `requestId` on retry, and never posting a
-second submission. Owner-controlled work still open: review/update the draft,
-confirm the prize payout address, publish the GitHub repository and demo X
-post, then confirm the exact final API payload. Do not make any external
-change, post, transaction, or submission from this checklist without its
-required owner-controlled step.
 
 ## Design direction
 

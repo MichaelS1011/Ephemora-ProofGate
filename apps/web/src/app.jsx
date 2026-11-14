@@ -775,7 +775,7 @@ function ChallengeProof({ onNavigate }) {
       </article>
 
       <article className="panel challenge-step">
-        <div className="challenge-step-marker"><span>4</span></div>
+        <div className="challenge-step-marker"><span>3</span></div>
         <div className="challenge-step-body">
           <div className="challenge-step-heading"><div><span className="section-kicker">NEAR Testnet settlement</span><h2>The verifier-approved job settled once</h2></div><Badge tone="chain" icon="check">Paid · confirmed</Badge></div>
           <p>On Testnet, the escrow contract paid <strong>0.10 NEAR</strong> to the recorded beneficiary. This is testnet-only evidence—not a Mainnet payment. The transaction explorer is the independent chain reference.</p>

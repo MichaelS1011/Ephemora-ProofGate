@@ -9,8 +9,8 @@ The local source trees inspected for the initial audit were:
 
 | Local checkout | Branch | Commit observed | Working tree |
 |---|---|---|---|
-| `<local Cell candidate checkout>` | `release/v1.2.0-rc` | `5b8a9055397e390956b6ed53c56255e3a2608775` | Dirty; 76 status entries when inspected |
-| `<second local Cell checkout>` | `release/1.2.0-preparation` | `13e95a19656b8774c85f885103e52743193cbf06` | Dirty; runtime CLI and test files modified, one test file untracked |
+| Local checkout (candidate release tree, not published) | `release/v1.2.0-rc` | `5b8a9055397e390956b6ed53c56255e3a2608775` | Dirty; 76 status entries when inspected |
+| Local checkout (preparation branch, not published) | `release/1.2.0-preparation` | `13e95a19656b8774c85f885103e52743193cbf06` | Dirty; runtime CLI and test files modified, one test file untracked |
 
 The owner has confirmed that Ephemora Cell remains under `BUSL-1.1`. The v1.2
 candidate metadata in the first checkout declares version `1.2.0` and

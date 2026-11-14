@@ -27,7 +27,7 @@ configured beneficiary, and only on instruction from the configured verifier.
 | **NEAR** | Original Rust escrow contract, deployed and settled on **NEAR Testnet** |
 | **Testnet contract** | `escrow-mw956wm0.proofgate-mw952xad.testnet` |
 | **On-chain proof** | `release_job` carries the signed receipt digest; 0.10 Testnet NEAR paid to the beneficiary |
-| **Reproduce** | `cargo test` (11 passing) · offline verifier on committed fixtures (17 checks, exit 0; one tampered byte → exit 1) · full local sandbox e2e |
+| **Reproduce** | `cargo test` (11 passing) · offline verifier on committed fixtures (17 checks, exit 0; one tampered byte → exit 1) · committed on-chain tx dumps cross-checked offline (21 checks, exit 0) · full local sandbox e2e |
 | **License** | BUSL-1.1 (see [LICENSE](LICENSE)); evaluation, research, and testing permitted |
 
 ## The 90-second story
@@ -110,6 +110,10 @@ Explorer evidence (Testnet only, throwaway accounts, faucet funds):
 | Job PG-73D0D44B — create | [`4dT5X1qm…mwHD`](https://explorer.testnet.near.org/transactions/4dT5X1qmaVeBmYpLiQEnF9MWGDdRteJREvGDFuc9mwHD) |
 | Job PG-73D0D44B — release (0.10 NEAR) | [`kkByopop…8kf`](https://explorer.testnet.near.org/transactions/kkByopop4xEhGqiZhsNGr29GBpNhvzhbFu2pb7GS8kf) |
 | Escrow refund path — refund on expiry | [`GTi73Y5Z…gek4`](https://explorer.testnet.near.org/transactions/GTi73Y5Zt6WccKki2C2FJKoGHctLD9E7H5nm8zVygek4) |
+
+All three raw RPC dumps are committed under [`docs/evidence/`](docs/evidence/PROVENANCE.md)
+and re-checkable offline with `python3 apps/api/verify_chain_evidence.py`
+(21 checks, exit 0 — see *Verify the live settlement offline*).
 
 The signed bundle behind this settlement — the real Cell evidence and receipt
 whose digest went on-chain — is committed under
@@ -207,6 +211,21 @@ PY
 Expected: `proofgate-receipt-public.pem 6868a3a50319351b` and
 `cell-evidence-public.pem 15bf4bcd0bb778a4` — matching the signed receipt, the
 `/api/keys` endpoint of a running local API, and the keys the Cell accepted.
+
+The chain side is committed too. The raw RPC dumps of all three Testnet
+transactions — the `create_job` deposit, the `release_job` payout, and the
+separate `refund_expired` path test — live under `docs/evidence/`, and a
+stdlib-only checker ties them back to the receipt, fully offline:
+
+```sh
+python3 apps/api/verify_chain_evidence.py
+```
+
+Expected: `"verified": true`, all 21 checks `"pass"`, exit 0 — including
+`releaseDigestMatchesReceipt`, which recomputes the canonical-JSON SHA-256 and
+compares it against the `receipt_digest` argument the escrow contract actually
+received on-chain. [`docs/evidence/PROVENANCE.md`](docs/evidence/PROVENANCE.md)
+documents the exact refetch commands.
 
 ## Run the escrow contract
 
