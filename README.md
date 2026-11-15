@@ -1,12 +1,30 @@
 # Ephemora ProofGate
 
-**Policy first. Payment last.**
+**Policy first. Payment last.** An AI agent gets paid for finished work only
+when *independent evidence* proves it — WASI-sandboxed execution, offline
+verification, one exact escrow release on NEAR Testnet.
+
+![30-second evidence reel: live UI for job PG-73D0D44B, sandbox network denial (ENOTSOCK), the signed verifier receipt, the NEAR Testnet release, and both offline checkers passing on committed fixtures (17/17 and 21/21 checks, exit 0). Every frame is material committed to this repository.](docs/assets/demo-reel.gif)
+
+**The 30-second demo is the reel above — every frame is committed evidence.**
+[Verify it yourself in 5 minutes](#run-the-verifier-yourself--the-five-minute-path)
+· [Cross-check the chain offline](#verify-the-live-settlement-offline)
+· [The 90-second story](#the-90-second-story)
 
 [![License: BUSL-1.1](https://img.shields.io/badge/license-BUSL--1.1-blue)](LICENSE)
 ![Track: AI Security & Defense](https://img.shields.io/badge/track-AI%20Security%20%26%20Defense-orange)
 ![NEAR Testnet](https://img.shields.io/badge/NEAR-Testnet-brightgreen)
 ![Sandbox: WASI Preview1](https://img.shields.io/badge/sandbox-WASI%20Preview1-blueviolet)
 ![Verifier: offline, no network](https://img.shields.io/badge/verifier-offline%20%C2%B7%20no%20network-green)
+
+| | |
+|---|---|
+| **Live job** | `PG-73D0D44B` — sandboxed guest, network denied (ENOTSOCK), signed receipt, **0.10 Testnet NEAR settled exactly once** on `escrow-mw956wm0.proofgate-mw952xad.testnet` |
+| **Proof you can run** | `python3 apps/api/verify_chain_evidence.py` → 21/21 pass · offline verifier on committed fixtures → 17/17 pass · one tampered byte → exit 1 · `cargo test` 11 passing · full local sandbox e2e |
+| **Trust model** | The guest holds no payment, verifier, or evidence key; only the external verifier may instruct a release ([trust boundary](#trust-boundary-three-authorities-kept-apart)) |
+| **Tracks · License** | AI Security & Defense · Agent Economy · BUSL-1.1 ([LICENSE](LICENSE)) |
+
+## The 90-second story
 
 ![ProofGate trust flow: an untrusted agent guest holds no payment, verifier, or evidence key; it runs inside the Ephemora Cell, and only the ProofGate verifier across the trust boundary can instruct the NEAR escrow to pay exactly once — a self-signed payout is rejected.](docs/assets/social/social-preview.png)
 
@@ -20,17 +38,6 @@ configured beneficiary, and only on instruction from the configured verifier.
 
 > An agent's word is not proof. ProofGate makes payment a verdict, not a
 > favor — and you can re-run every check yourself.
-
-| | |
-|---|---|
-| **Tracks** | AI Security & Defense (`security`) · Agent Economy (`agents`) |
-| **NEAR** | Original Rust escrow contract, deployed and settled on **NEAR Testnet** |
-| **Testnet contract** | `escrow-mw956wm0.proofgate-mw952xad.testnet` |
-| **On-chain proof** | `release_job` carries the signed receipt digest; 0.10 Testnet NEAR paid to the beneficiary |
-| **Reproduce** | `cargo test` (11 passing) · offline verifier on committed fixtures (17 checks, exit 0; one tampered byte → exit 1) · committed on-chain tx dumps cross-checked offline (21 checks, exit 0) · full local sandbox e2e |
-| **License** | BUSL-1.1 (see [LICENSE](LICENSE)); evaluation, research, and testing permitted |
-
-## The 90-second story
 
 The complete causal path in recorded evidence: a live
 network-capability denial (ENOTSOCK), the real create → run → verify → settle
