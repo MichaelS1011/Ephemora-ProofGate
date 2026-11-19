@@ -491,7 +491,11 @@ def health_report(force: bool = False) -> dict[str, Any]:
 def near_testnet_status() -> dict[str, Any]:
     parsed = urlparse(NEAR_TESTNET_RPC_URL)
     allowed_hosts = {"archival-rpc.testnet.near.org", "test.rpc.fastnear.com"}
-    if parsed.scheme != "https" or parsed.hostname not in allowed_hosts or parsed.port:
+    try:
+        rpc_port = parsed.port
+    except ValueError as exc:
+        raise ApiError(503, "The configured NEAR endpoint is not an approved Testnet RPC host.") from exc
+    if parsed.scheme != "https" or parsed.hostname not in allowed_hosts or rpc_port:
         raise ApiError(503, "The configured NEAR endpoint is not an approved Testnet RPC host.")
 
     request_body = canonical_json({"jsonrpc": "2.0", "id": "proofgate-status", "method": "status", "params": []})
@@ -567,7 +571,9 @@ def create_probe_job() -> dict[str, Any]:
 def create_job(payload: dict[str, Any]) -> dict[str, Any]:
     name = payload.get("name")
     input_text = payload.get("input")
-    reward = str(payload.get("reward", "0.10"))
+    reward = payload.get("reward", "0.10")
+    if not isinstance(reward, str):
+        raise ApiError(400, "Sample reward must be a decimal string with no more than two decimal places.")
     beneficiary = str(payload.get("beneficiary", "local-agent.testnet"))
     language = payload.get("language", "rust")
     if not isinstance(language, str) or language not in PROGRAMS:
@@ -586,11 +592,10 @@ def create_job(payload: dict[str, Any]) -> dict[str, Any]:
         raise ApiError(400, f"Input must be {MAX_INPUT_BYTES} bytes or smaller.")
     if not INPUT_PATTERN.fullmatch(input_text):
         raise ApiError(400, "This sample accepts ASCII letters, numbers, whitespace, periods, commas, underscores, and hyphens.")
-    try:
-        reward_value = float(reward)
-    except ValueError as exc:
-        raise ApiError(400, "Sample reward must be a number.") from exc
-    if not (0 < reward_value <= 10):
+    if not re.fullmatch(r"(?:0|[1-9]\d*)(?:\.\d{1,2})?", reward):
+        raise ApiError(400, "Sample reward must be a decimal number with no more than two decimal places.")
+    reward_value = Decimal(reward)
+    if reward_value <= 0 or reward_value > 10:
         raise ApiError(400, "Sample reward must be greater than 0 and no more than 10 NEAR.")
     if not re.fullmatch(r"[a-z0-9._-]{2,64}", beneficiary):
         raise ApiError(400, "Beneficiary must be a lowercase NEAR-style account name.")
@@ -935,17 +940,21 @@ def run_job(job_id: str) -> dict[str, Any]:
                 _set_blocked(job_id, "receipt_signature_failed", "ProofGate could not verify its own receipt signature.")
                 raise ApiError(500, "ProofGate could not verify its own receipt signature.") from exc
 
-            with db_connection() as db:
-                db.execute("BEGIN IMMEDIATE")
-                db.execute(
-                    "INSERT INTO accepted_reports (report_id, job_id, accepted_at) VALUES (?, ?, ?)",
-                    (report_id, job_id, timestamp()),
-                )
-                db.execute(
-                    "UPDATE jobs SET state = 'Verified', output_json = ?, cell_report_id = ?, receipt_json = ?, cell_evidence_json = ?, error_code = NULL, error_message = NULL WHERE job_id = ? AND state = 'Executing'",
-                    (json.dumps(output, sort_keys=True), report_id, json.dumps(signed_receipt, sort_keys=True), envelope_bytes.decode("utf-8"), job_id),
-                )
-                db.commit()
+            try:
+                with db_connection() as db:
+                    db.execute("BEGIN IMMEDIATE")
+                    db.execute(
+                        "INSERT INTO accepted_reports (report_id, job_id, accepted_at) VALUES (?, ?, ?)",
+                        (report_id, job_id, timestamp()),
+                    )
+                    db.execute(
+                        "UPDATE jobs SET state = 'Verified', output_json = ?, cell_report_id = ?, receipt_json = ?, cell_evidence_json = ?, error_code = NULL, error_message = NULL WHERE job_id = ? AND state = 'Executing'",
+                        (json.dumps(output, sort_keys=True), report_id, json.dumps(signed_receipt, sort_keys=True), envelope_bytes.decode("utf-8"), job_id),
+                    )
+                    db.commit()
+            except sqlite3.IntegrityError as exc:
+                _set_blocked(job_id, "replay", "This Cell report ID has already been accepted.")
+                raise ApiError(409, "This Cell report ID has already been accepted.") from exc
             return {"job": row_to_job(get_job(job_id)), "receipt": signed_receipt, "cellEvidence": envelope, "demo": False}
     except ApiError as exc:
         _set_blocked(job_id, "verification_rejected", exc.message)
@@ -1072,6 +1081,12 @@ class Handler(BaseHTTPRequestHandler):
             raise ApiError(400, "Request body must be a JSON object.")
         return value
 
+    def _content_length(self) -> int:
+        try:
+            return int(self.headers.get("Content-Length", "0") or 0)
+        except ValueError as exc:
+            raise ApiError(400, "Content-Length is invalid.") from exc
+
     def do_OPTIONS(self) -> None:
         if not self._request_context_allowed():
             return
@@ -1110,7 +1125,7 @@ class Handler(BaseHTTPRequestHandler):
             if parts == ["api", "jobs"]:
                 return self._send(201, {"job": create_job(self._body()), "demo": False})
             if parts == ["api", "probes", "denied-network"]:
-                if int(self.headers.get("Content-Length", "0") or 0) > 0:
+                if self._content_length() > 0:
                     self._body()
                 probe_job = create_probe_job()
                 return self._send(201, run_job(probe_job["id"]))
@@ -1120,7 +1135,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(403, {"error": "Settlement bridge authorization failed."})
                 return self._send(201, record_settlement(parts[2], self._body()))
             if len(parts) == 4 and parts[:2] == ["api", "jobs"] and parts[3] == "run":
-                if int(self.headers.get("Content-Length", "0")) != 0:
+                if self._content_length() != 0:
                     return self._send(400, {"error": "Run requests do not accept a body."})
                 return self._send(200, run_job(parts[2]))
             return self._send(404, {"error": "Route not found."})

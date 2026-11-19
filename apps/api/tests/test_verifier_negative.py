@@ -59,6 +59,11 @@ class VerifierNegativeTests(unittest.TestCase):
         sys.path.insert(0, str(API_DIR))
         import proofgate_api
         cls.api = proofgate_api
+        # The module captures DATA_DIR/DB_PATH at import time; pin them
+        # explicitly so this class stays isolated no matter whether another
+        # test module already imported proofgate_api with other defaults.
+        cls.api.DATA_DIR = cls.data_dir
+        cls.api.DB_PATH = cls.data_dir / "proofgate.sqlite3"
         cls.api.BRIDGE_TOKEN = "test-bridge-token"
         cls.api.initialize_database()
         cls.original_now = cls.api.now_utc
