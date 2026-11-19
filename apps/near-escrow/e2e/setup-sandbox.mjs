@@ -1,11 +1,19 @@
 import { execFileSync } from 'node:child_process';
-import { chmodSync, copyFileSync, existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const VERSION = process.env.NEAR_SANDBOX_VERSION || '2.14.0';
 const MIN_PROTOCOL = 88;
+// Known-good SHA-256 digests of the official nearcore sandbox tarballs,
+// computed from the same URLs used below. An entry is verified by default;
+// NEAR_SANDBOX_SHA256 overrides the pin (e.g. for a newer version), and an
+// unknown version without the override only warns.
+const PINNED_SHA256 = {
+  'Darwin-arm64/2.14.0': 'ea53448ef97540c012e5c3d967c74d78292b0465a98cf7027811a936718fe232',
+};
 const here = dirname(fileURLToPath(import.meta.url));
 
 function platformPath() {
@@ -40,11 +48,22 @@ try {
   if (!response.ok) throw new Error(`Sandbox download failed: HTTP ${response.status} from ${url}`);
   const archive = join(temporary, 'near-sandbox.tar.gz');
   writeFileSync(archive, Buffer.from(await response.arrayBuffer()));
+  const digest = createHash('sha256').update(readFileSync(archive)).digest('hex');
+  const pin = process.env.NEAR_SANDBOX_SHA256 || PINNED_SHA256[`${platform}/${VERSION}`];
+  if (pin) {
+    if (digest !== pin.toLowerCase()) {
+      throw new Error(`Sandbox archive checksum mismatch: got ${digest}, expected ${pin.toLowerCase()}. Refusing to install.`);
+    }
+    console.log(`sandbox archive sha256 verified: ${digest}`);
+  } else {
+    console.warn(`warning: no SHA-256 pin for ${platform}/${VERSION}; downloaded sha256 is ${digest}. Set NEAR_SANDBOX_SHA256 to pin it.`);
+  }
   execFileSync('tar', ['-xzf', archive, '-C', temporary]);
   const extracted = join(temporary, platform, 'near-sandbox');
   if (!existsSync(extracted)) {
     throw new Error(`Archive did not contain ${platform}/near-sandbox (found: ${readdirSync(temporary).join(', ')}).`);
   }
+  mkdirSync(dirname(binary), { recursive: true });
   copyFileSync(extracted, binary);
   chmodSync(binary, 0o755);
   const protocol = protocolOf(binary);

@@ -80,7 +80,14 @@ async function ensureAccount(role, amount) {
     await master.createAccount(accountId, keyPair.getPublicKey(), yocto(amount));
     saveKey(accountId, keyPair);
   } else if (!savedKeys.has(accountId)) {
-    throw new Error(`Account ${accountId} exists but no key is saved for it.`);
+    // Verified live on testnet: NEAR grants the parent no signing rights on an
+    // existing sub-account (AddKey, DeleteKey and DeleteAccount are all rejected
+    // with ActorNoPermission). A key can therefore only ever be attached at
+    // creation time, so this state cannot be recovered automatically.
+    throw new Error(
+      `Account ${accountId} exists but no key is saved for it. NEAR parents cannot add keys to existing ` +
+      'sub-accounts, so recreate the master account (create-testnet-master.mjs) to recover.',
+    );
   }
   return { id: accountId, account: await near.account(accountId) };
 }
@@ -130,10 +137,19 @@ if (contractId) {
   escrow = await near.account(contractId);
   const configuration = await escrow.viewFunction({ contractId, methodName: 'get_configuration', args: {} });
   assert.equal(configuration.verifier_id, verifier.id);
+  // Custody audit for reused contracts: full access keys are the only way to
+  // redeploy or drain this account outside the contract methods, so surface them.
+  const reusedKeys = (await escrow.getAccessKeys()).filter((entry) => entry.access_key?.permission === 'FullAccess');
+  results.contractFullAccessKeys = reusedKeys.map((entry) => entry.public_key);
+  console.log(`reusing contract ${contractId} with ${reusedKeys.length} full access key(s): ${reusedKeys.map((k) => k.public_key).join(', ') || 'none'}`);
 } else {
   contractId = `escrow-${runId}.${masterId}`;
+  // The deploy key is generated in memory only, never written to accounts.jsonl.
+  // Once this process exits the secret is gone, which effectively burns the key:
+  // the contract stays code-frozen and no one (not even the parent master
+  // account, which NEAR forbids from signing for existing sub-accounts) can
+  // redeploy it or move its balance outside the contract's own methods.
   const escrowKey = nearAPI.KeyPair.fromRandom('ed25519');
-  keyStore.setKey('testnet', contractId, escrowKey);
   escrow = await master.createAndDeployContract(contractId, escrowKey.getPublicKey(), wasm, yocto(3));
   const initOutcome = await owner.account.functionCall({
     contractId,
@@ -143,6 +159,16 @@ if (contractId) {
     attachedDeposit: '0',
   });
   await finalize(initOutcome.transaction_outcome.id, owner.id);
+  // Assert the deployment left exactly the one expected full access key, so any
+  // injected or duplicated key on the contract account fails the run loudly.
+  const deployedKeys = (await escrow.getAccessKeys()).filter((entry) => entry.access_key?.permission === 'FullAccess');
+  if (deployedKeys.length !== 1 || deployedKeys[0].public_key !== escrowKey.getPublicKey().toString()) {
+    throw new Error(
+      `Contract account ${contractId} has unexpected full access keys after deployment: ` +
+      (deployedKeys.map((entry) => entry.public_key).join(', ') || 'none'),
+    );
+  }
+  results.contractFullAccessKeys = deployedKeys.map((entry) => entry.public_key);
 }
 
 const apiBase = process.env.PROOFGATE_API;

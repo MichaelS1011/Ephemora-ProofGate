@@ -29,7 +29,10 @@ with `near-workspaces` 5.0.0 ships nearcore 2.6.2 (protocol 77), which cannot
 prepare the current near-sdk contract. The contract pins NEAR SDK 5.20.0 to
 match nearcore 2.14.0, the protocol-88 sandbox release used by the harness.
 The setup script downloads nearcore 2.14.0 from the official NEAR build bucket
-and replaces only the local binary under `node_modules/`. The check is
+and replaces only the local binary under `node_modules/`. The download is
+verified against a pinned SHA-256 digest of the official archive; for other
+releases set `NEAR_SANDBOX_SHA256` to the expected digest (the script prints
+the observed digest and warns when no pin is available). The check is
 idempotent; `npm install` can restore the old binary and the next run repairs it.
 
 Supported sandbox platforms: Darwin arm64 and Linux x86_64. Set
@@ -63,6 +66,17 @@ node testnet.mjs
 The testnet keys are stored in `.local/near-testnet/` (ignored) and are never
 mainnet keys. The archival Testnet RPC is deprecated and rate-limited; use
 `https://test.rpc.fastnear.com`.
+
+Contract custody: the escrow deploy key is generated in memory, used once for
+the deployment batch and never persisted. When the harness exits the secret is
+gone, which effectively burns the key — the contract stays code-frozen and its
+balance can only move through the contract's own methods. NEAR grants the
+parent master account no signing rights over an existing sub-account (AddKey,
+DeleteKey and DeleteAccount are rejected with `ActorNoPermission`; verified
+live on Testnet), so the master cannot drain or redeploy the contract either —
+but it also cannot recover a role account whose key was lost. The run asserts
+that a fresh deployment leaves exactly one full access key on the contract and
+logs the key set of any reused contract in the JSON summary.
 
 ## Optional: record the settlement in ProofGate
 
@@ -103,3 +117,7 @@ sandbox settlement is labeled as such; it is not a Mainnet payment.
   does not verify Cell evidence itself.
 - A sandbox transaction hash is not a public explorer link. The interface
   labels it `NEAR sandbox` and does not construct an explorer URL.
+- Testnet funds are faucet money with no real value. Custody of the deployed
+  contract is held by its single full access key, which the harness burns by
+  never persisting it; the parent master account provably cannot sign for the
+  contract or any role sub-account after creation.
