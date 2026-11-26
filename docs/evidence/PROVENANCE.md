@@ -2,23 +2,39 @@
 
 These three files are the **unmodified `result` objects** returned by the
 public NEAR Testnet RPC for the three transactions referenced in the README.
-Each file wraps that result in a small `provenance` block (endpoint, method,
-tx hash, sender parameter, fetched-at timestamp). They let anyone re-check —
-fully offline — that what happened on-chain matches the committed signed
-bundle:
+They were fetched on **2026-11-14 (UTC)** from `https://rpc.testnet.near.org`
+(independent of the archival endpoints used for anchoring below). Each file
+wraps that result in a small `provenance` block (endpoint, method, tx hash,
+sender parameter, fetched-at timestamp). Two checkers cover them:
 
 ```
 python3 apps/api/verify_chain_evidence.py
+python3 apps/api/verify_chain_signatures.py
 ```
 
-Expected: `"verified": true`, all 21 checks `"pass"`, exit 0 — including
+The first proves the committed files **agree with each other**: expected:
+`"verified": true`, all 21 checks `"pass"`, exit 0 — including
 `releaseDigestMatchesReceipt`, which recomputes the canonical-JSON SHA-256 of
 the committed live receipt payload
 (`apps/api/tests/fixtures/live/proofgate-receipt.json`) and compares it to the
 `receipt_digest` argument of the on-chain `release_job` call.
 
-The dumps were fetched on **2026-11-14 (UTC)** from `https://rpc.testnet.near.org`.
-To refetch and compare yourself:
+The second runs **structural and pinned-constant checks** offline (24 checks:
+signer, receiver, account key, method, gas, deposit, arguments, digest
+binding, and an exact byte-for-byte comparison of each dump's transaction
+hash, signature, nonce, and priority fee against constants audited in this
+file and the README). The offline run performs **no cryptography** — it
+proves the committed files are byte-identical to the audited record, nothing
+more. Only `--rpc-anchor` is cryptographic: it re-encodes each transaction in
+Borsh, reconstructs the signing-block preimage from the live archival Testnet
+RPC, and demands that the embedded Ed25519 signature verify over the
+transaction hash under the anchored account key — so a dump can only pass if
+a transaction with exactly these bytes provably existed on Testnet. Because
+it queries the archival node block by block, `--rpc-anchor` takes several
+minutes and depends on a reachable archival endpoint.
+
+Neither checker substitutes for refetching from an independent node, which
+remains the ultimate anchor:
 
 ```bash
 curl -sS https://rpc.testnet.near.org -H 'Content-Type: application/json' \

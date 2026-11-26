@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import os
 import shutil
@@ -211,6 +212,53 @@ class VerifierNegativeTests(unittest.TestCase):
         self.assertEqual(row["state"], "Blocked")
         self.assertEqual(row["error_code"], "replay")
 
+    def test_float_output_variant_is_blocked(self):
+        # Python equality is type-permissive (4.0 == 4); the receipt digest
+        # hashes canonical JSON, so such variants must never verify.
+        self.run_blocked(
+            "cell-evidence.json",
+            stderr='RESULT_JSON:{"normalized":"proofgate verified this line","wordCount":4.0}\n',
+            error_code="output_mismatch",
+        )
+
+    def test_boolean_output_variant_is_blocked(self):
+        # True == 1 in Python; the canonical-bytes comparison must still reject it.
+        self.run_blocked(
+            "cell-evidence.json",
+            stderr='RESULT_JSON:{"normalized":"proofgate verified this line","wordCount":true}\n',
+            error_code="output_mismatch",
+        )
+
+    def test_settlement_amount_is_canonicalized_and_ascii_only(self):
+        self.scenario("amount-canonical", "cell-evidence.json")
+        job_id = self.new_job()
+        result = self.api.run_job(job_id)
+        receipt = result["receipt"]
+
+        # Non-canonical but numerically equal forms are accepted and stored
+        # canonically, so the payment ledger holds one shape per value.
+        response = self.api.record_settlement(job_id, self.settlement_payload(receipt, amount="0.1"))
+        self.assertEqual(response["settlement"]["amount"], "0.10")
+
+        for hostile in ("0.١٠", "0.１０", "0.1_0", "+0.10", " 0.10"):
+            with self.subTest(amount=hostile):
+                with self.assertRaises(self.api.ApiError):
+                    self.api.record_settlement(job_id + "X", self.settlement_payload(receipt, amount=hostile))
+
+    def test_empty_input_is_rejected(self):
+        for hostile in ("", "   ", "\t\n"):
+            with self.subTest(input=hostile):
+                with self.assertRaises(self.api.ApiError):
+                    self.api.create_job(
+                        {
+                            "name": "Empty input",
+                            "input": hostile,
+                            "reward": "0.10",
+                            "beneficiary": "agent.testnet",
+                            "language": "rust",
+                        }
+                    )
+
 
 class OfflineVerifierTests(unittest.TestCase):
     def run_verifier(self, *args: str) -> subprocess.CompletedProcess:
@@ -261,6 +309,196 @@ class OfflineVerifierTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 1)
         self.assertIn('"signature": "fail"', result.stdout)
+
+
+    def signed_receipt(self, mutate) -> Path:
+        # Re-sign a tampered payload with the committed test key so the
+        # signature check passes and only the intended binding check fails.
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+        from cryptography.hazmat.primitives import serialization
+
+        receipt = json.loads((FIXTURES / "proofgate-receipt.json").read_text(encoding="utf-8"))
+        payload = receipt["payload"]
+        mutate(payload)
+        preimage = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        private = serialization.load_pem_private_key(
+            (FIXTURES / "proofgate-receipt-private.pem").read_bytes(), password=None
+        )
+        signature = base64.b64encode(private.sign(preimage)).decode("ascii")
+        if "signatures" in receipt:
+            receipt["signatures"] = [dict(receipt["signatures"][0], signature=signature)]
+        else:
+            receipt["signature"] = signature
+        temporary = tempfile.TemporaryDirectory(prefix="proofgate-signed-tamper-")
+        self.addCleanup(temporary.cleanup)
+        path = Path(temporary.name) / "receipt.json"
+        path.write_text(json.dumps(receipt), encoding="utf-8")
+        return path
+
+    def run_signed_tamper(self, mutate, failing_check: str) -> None:
+        path = self.signed_receipt(mutate)
+        result = self.run_verifier(
+            *self.base_args(),
+            "--receipt", str(path),
+            "--receipt-key", str(FIXTURES / "proofgate-receipt-public.pem"),
+        )
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn(f'"{failing_check}": "fail"', result.stdout)
+
+    def test_receipt_job_binding_mismatch_is_rejected(self):
+        self.run_signed_tamper(lambda p: p.update(jobId="PG-00000000"), "jobBinding")
+
+    def test_receipt_report_binding_mismatch_is_rejected(self):
+        self.run_signed_tamper(lambda p: p.update(cellReportId="0" * 32), "reportBinding")
+
+    def test_receipt_evidence_digest_mismatch_is_rejected(self):
+        self.run_signed_tamper(lambda p: p.update(cellEvidenceDigest="sha256:" + "a" * 64), "evidenceDigest")
+
+    def test_receipt_signer_binding_mismatch_is_rejected(self):
+        self.run_signed_tamper(lambda p: p.update(cellSignerKeyId="0" * 16), "cellSigner")
+
+    def test_receipt_paid_decision_is_rejected(self):
+        self.run_signed_tamper(lambda p: p.update(decision="verified; paid"), "receiptDecision")
+
+    def test_receipt_missing_signature_is_rejected(self):
+        receipt = json.loads((FIXTURES / "proofgate-receipt.json").read_text(encoding="utf-8"))
+        receipt["signatures"] = []
+        with tempfile.TemporaryDirectory(prefix="proofgate-nosig-") as temporary:
+            path = Path(temporary) / "receipt.json"
+            path.write_text(json.dumps(receipt), encoding="utf-8")
+            result = self.run_verifier(
+                *self.base_args(),
+                "--receipt", str(path),
+                "--receipt-key", str(FIXTURES / "proofgate-receipt-public.pem"),
+            )
+        self.assertEqual(result.returncode, 1)
+        # An empty signatures list fails the shape gate before extraction.
+        self.assertIn('"receiptShape": "fail"', result.stdout)
+
+
+class ChainSignatureVerifierTests(unittest.TestCase):
+    EVIDENCE = ROOT / "docs" / "evidence"
+    LIVE_RECEIPT = FIXTURES / "live" / "proofgate-receipt.json"
+
+    def run_verifier(self, evidence_dir: Path, live_receipt: Path) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            [
+                sys.executable,
+                str(API_DIR / "verify_chain_signatures.py"),
+                "--evidence-dir", str(evidence_dir),
+                "--live-receipt", str(live_receipt),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    def sandbox(self) -> tuple[tempfile.TemporaryDirectory, Path, Path]:
+        temporary = tempfile.TemporaryDirectory(prefix="proofgate-anchor-")
+        evidence_dir = Path(temporary.name) / "evidence"
+        shutil.copytree(self.EVIDENCE, evidence_dir)
+        receipt = Path(temporary.name) / "proofgate-receipt.json"
+        shutil.copyfile(self.LIVE_RECEIPT, receipt)
+        return temporary, evidence_dir, receipt
+
+    def test_committed_dumps_verify_offline(self):
+        result = self.run_verifier(self.EVIDENCE, self.LIVE_RECEIPT)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('"verified": true', result.stdout)
+
+    def test_edited_release_digest_fails_closed(self):
+        temporary, evidence_dir, receipt = self.sandbox()
+        try:
+            path = evidence_dir / "release_job.tx.json"
+            dump = json.loads(path.read_text(encoding="utf-8"))
+            call = dump["result"]["transaction"]["actions"][0]["FunctionCall"]
+            args = json.loads(base64.b64decode(call["args"]))
+            args["receipt_digest"] = "sha256:" + "f" * 64
+            call["args"] = base64.b64encode(json.dumps(args).encode()).decode()
+            path.write_text(json.dumps(dump), encoding="utf-8")
+            result = self.run_verifier(evidence_dir, receipt)
+        finally:
+            temporary.cleanup()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('"release_jobCallAnchored": "fail"', result.stdout)
+
+    def test_edited_signer_fails_closed(self):
+        temporary, evidence_dir, receipt = self.sandbox()
+        try:
+            path = evidence_dir / "create_job.tx.json"
+            dump = json.loads(path.read_text(encoding="utf-8"))
+            dump["result"]["transaction"]["signer_id"] = "attacker.testnet"
+            path.write_text(json.dumps(dump), encoding="utf-8")
+            result = self.run_verifier(evidence_dir, receipt)
+        finally:
+            temporary.cleanup()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('"create_jobSignerAnchored": "fail"', result.stdout)
+
+    def test_tampered_live_receipt_breaks_digest_binding(self):
+        temporary, evidence_dir, receipt = self.sandbox()
+        try:
+            data = json.loads(receipt.read_text(encoding="utf-8"))
+            data["payload"]["reward"] = "9.99"
+            receipt.write_text(json.dumps(data), encoding="utf-8")
+            result = self.run_verifier(evidence_dir, receipt)
+        finally:
+            temporary.cleanup()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('"releaseDigestMatchesLiveReceipt": "fail"', result.stdout)
+
+    def test_missing_dump_fails_closed(self):
+        temporary, evidence_dir, receipt = self.sandbox()
+        try:
+            (evidence_dir / "refund_expired.tx.json").unlink()
+            result = self.run_verifier(evidence_dir, receipt)
+        finally:
+            temporary.cleanup()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('"refund_expiredDumpPresent": "fail"', result.stdout)
+
+    def test_single_byte_signature_tamper_fails_closed(self):
+        temporary, evidence_dir, receipt = self.sandbox()
+        try:
+            path = evidence_dir / "release_job.tx.json"
+            dump = json.loads(path.read_text(encoding="utf-8"))
+            signature = dump["result"]["transaction"]["signature"]
+            dump["result"]["transaction"]["signature"] = signature[:-1]
+            path.write_text(json.dumps(dump), encoding="utf-8")
+            result = self.run_verifier(evidence_dir, receipt)
+        finally:
+            temporary.cleanup()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('"release_jobPinnedBytesAnchored": "fail"', result.stdout)
+
+    def test_edited_transaction_hash_fails_closed(self):
+        temporary, evidence_dir, receipt = self.sandbox()
+        try:
+            path = evidence_dir / "create_job.tx.json"
+            dump = json.loads(path.read_text(encoding="utf-8"))
+            dump["result"]["transaction"]["hash"] = "1" * 44
+            path.write_text(json.dumps(dump), encoding="utf-8")
+            result = self.run_verifier(evidence_dir, receipt)
+        finally:
+            temporary.cleanup()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('"create_jobPinnedBytesAnchored": "fail"', result.stdout)
+
+    def test_grafted_foreign_signature_fails_closed(self):
+        # Swap another real transaction's signature into the release dump:
+        # structurally valid, but pinned bytes catch it.
+        temporary, evidence_dir, receipt = self.sandbox()
+        try:
+            create = json.loads((evidence_dir / "create_job.tx.json").read_text(encoding="utf-8"))
+            path = evidence_dir / "release_job.tx.json"
+            dump = json.loads(path.read_text(encoding="utf-8"))
+            dump["result"]["transaction"]["signature"] = create["result"]["transaction"]["signature"]
+            path.write_text(json.dumps(dump), encoding="utf-8")
+            result = self.run_verifier(evidence_dir, receipt)
+        finally:
+            temporary.cleanup()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('"release_jobPinnedBytesAnchored": "fail"', result.stdout)
 
 
 if __name__ == "__main__":

@@ -35,8 +35,10 @@ class CheckLog:
 
     def record(self, name: str, ok: bool, error: str | None = None) -> bool:
         self.checks[name] = "pass" if ok else "fail"
-        if not ok and error:
-            self.errors.append(error)
+        if not ok:
+            # Fail closed: a failing check must always surface an error, even
+            # if a future call site forgets the message (mirrors the chain script).
+            self.errors.append(error or f"Check '{name}' failed.")
         return ok
 
     def skip(self, name: str) -> None:
@@ -49,10 +51,6 @@ def canonical_json(value: Any) -> bytes:
 
 def sha256_hex(value: bytes) -> str:
     return hashlib.sha256(value).hexdigest()
-
-
-def is_hex_digest(value: Any) -> bool:
-    return isinstance(value, str) and len(value) == 64 and set(value) <= HEX_DIGEST
 
 
 def public_key_id(public_key: Ed25519PublicKey) -> str:

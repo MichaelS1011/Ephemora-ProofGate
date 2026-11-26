@@ -20,7 +20,7 @@ verification, one exact escrow release on NEAR Testnet.
 | | |
 |---|---|
 | **Live job** | `PG-73D0D44B` — sandboxed guest, network denied (ENOTSOCK), signed receipt, **0.10 Testnet NEAR settled exactly once** on `escrow-mw956wm0.proofgate-mw952xad.testnet` |
-| **Proof you can run** | `python3 apps/api/verify_chain_evidence.py` → 21/21 pass · offline verifier on committed fixtures → 17/17 pass · one tampered byte → exit 1 · `cargo test` 11 passing · full local sandbox e2e |
+| **Proof you can run** | `python3 apps/api/verify_chain_evidence.py` → 21/21 pass · offline verifier on committed fixtures → 17/17 pass · one tampered byte → exit 1 · `cargo test` 15 passing · full local sandbox e2e |
 | **Trust model** | The guest holds no payment, verifier, or evidence key; only the external verifier may instruct a release ([trust boundary](#trust-boundary-three-authorities-kept-apart)) |
 | **Tracks · License** | AI Security & Defense · Agent Economy · BUSL-1.1 ([LICENSE](LICENSE)) |
 
@@ -139,7 +139,9 @@ live settlement offline* below.
 
 Untrusted code cannot sign its own payout. Guardrails are fail-closed: unknown
 evidence schemas are rejected, repeated Cell reports are rejected, and an
-unconfirmed transaction is never shown as paid.
+unconfirmed transaction is never shown as paid. A candid, audited list of what
+each layer does *not* enforce — and where trust therefore begins — is in
+[docs/SECURITY_LIMITATIONS.md](docs/SECURITY_LIMITATIONS.md).
 
 ## Run the verifier yourself — the five-minute path
 
@@ -150,9 +152,11 @@ the API setup below (Python 3.12+ venv + `cryptography`), then:
 python3 apps/api/tests/test_verifier_negative.py
 ```
 
-Expected: **11 passing tests**. The negative matrix covers forged signatures,
-tampered and stale evidence, tenant mismatch, wrong outputs, and replayed
-report IDs.
+Expected: **26 passing tests**. The negative matrix covers forged signatures,
+tampered and stale evidence, tenant mismatch, wrong outputs, replayed report
+IDs, type-permissive output variants (`4.0 == 4` in Python), non-ASCII and
+non-canonical settlement amounts, empty inputs, and tampering with the
+committed chain dumps (each tamper test works on copies and must fail closed).
 
 ```sh
 python3 apps/api/verify_bundle.py \
@@ -172,6 +176,13 @@ to `"wordCount":5` in `apps/api/tests/fixtures/output.json`, and re-run: the
 `outputDigest` check fails and the verifier exits 1 with `"verified": false`.
 One changed value, and the proof collapses. (The verifier hashes the canonical
 JSON, so whitespace-only edits are not tampering — the value itself must change.)
+Note: the fixtures under `apps/api/tests/fixtures/` were signed with the
+committed Ed25519 *test* keys in the same directory — they exist only for this
+offline matrix, and the API refuses to start if a configured signing key
+points into that directory. The live settlement evidence is a separate bundle
+under `apps/api/tests/fixtures/live/`, of which only the public verification
+keys are committed (see *Verify the live settlement offline*); the contract
+that paid it cannot be redeployed because its deploy key was burned.
 
 ## Verify the live settlement offline
 
@@ -195,8 +206,12 @@ python3 apps/api/verify_bundle.py \
 Expected: `"verified": true`, all 17 checks `"pass"`, exit 0 — the same
 verifier, now against the real 0.10 Testnet NEAR payment. The canonical-JSON
 SHA-256 of the receipt payload equals the `receipt_digest` argument of the
-on-chain `release_job` transaction (`452fe3d4…` in the table above), so the
-offline verification and the chain agree on the exact same bytes.
+committed `release_job` transaction dump (`452fe3d4…` in the table above).
+Offline, these checks prove that the committed signed bundle and the committed
+transaction dumps agree byte-for-byte; whether the dumps truly came from the
+chain is established by the independent refetch commands in
+[docs/evidence/PROVENANCE.md](docs/evidence/PROVENANCE.md) and by the
+cryptographic anchor below.
 
 You can also cross-check the signing identities yourself. A key ID is the
 first 16 hex characters of SHA-256 over the raw Ed25519 public key; the
@@ -219,6 +234,27 @@ Expected: `proofgate-receipt-public.pem 6868a3a50319351b` and
 `cell-evidence-public.pem 15bf4bcd0bb778a4` — matching the signed receipt, the
 `/api/keys` endpoint of a running local API, and the keys the Cell accepted.
 
+Anchor the transactions cryptographically. The offline checkers prove the
+committed files agree with each other and match the audited constants; the
+anchored run additionally proves they could not have been written by hand.
+The script re-encodes each transaction in Borsh, reconstructs the
+signing-block preimage from the live archival Testnet RPC, and requires that
+the embedded Ed25519 signature verify over the transaction hash under the
+anchored account key:
+
+```sh
+cd apps/api && uv run python verify_chain_signatures.py --rpc-anchor
+```
+
+Expected: `"verified": true`, exit 0. The archival node throttles requests,
+so the anchored run takes several minutes. Without `--rpc-anchor` the same
+script runs 26 offline checks — structure, bindings, and a byte-for-byte
+comparison of each dump's transaction hash, signature, nonce, and priority
+fee against the audited record — but performs **no cryptography**; the
+offline pass proves the committed files are the audited files, and the
+ultimate anchor stays refetching from an independent node
+([`docs/evidence/PROVENANCE.md`](docs/evidence/PROVENANCE.md)).
+
 The chain side is committed too. The raw RPC dumps of all three Testnet
 transactions — the `create_job` deposit, the `release_job` payout, and the
 separate `refund_expired` path test — live under `docs/evidence/`, and a
@@ -238,7 +274,7 @@ documents the exact refetch commands.
 
 ```sh
 cd apps/near-escrow
-cargo test          # 11 contract unit checks
+cargo test          # 15 contract unit checks
 cargo build --target wasm32-unknown-unknown --release
 # WASM SHA-256: da2a8d36361f4284a5540a041ad0aa14cfc3654ef87c0caf1f67b23151dd453e
 cd e2e
@@ -350,7 +386,7 @@ A clean checkout of the tracked tree reproduces, without `.local/`,
 
 | Command | Expected |
 |---|---|
-| `python3 apps/api/tests/test_verifier_negative.py` | 11 passing; the matrix uses only committed fixture keys, so it runs identically on a clean clone |
+| `python3 apps/api/tests/test_verifier_negative.py` | 26 passing; the matrix uses only committed fixture keys, so it runs identically on a clean clone |
 | `python3 apps/api/verify_bundle.py …` | `"verified": true`, every check `pass` |
 | `verify_bundle.py` on `apps/api/tests/fixtures/live/` | `"verified": true` on the real settlement; receipt digest matches on-chain `452fe3d4…` |
 | `shasum -a 256 -c apps/api/examples/CHECKSUMS.txt` | all 6 committed guest modules `OK`; Rust module digest equals the live receipt's `programDigest` |

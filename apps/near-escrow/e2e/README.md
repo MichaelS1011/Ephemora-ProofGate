@@ -49,6 +49,22 @@ node create-testnet-master.mjs
 NEAR_TESTNET_RPC_URL="https://test.rpc.fastnear.com" node testnet.mjs
 ```
 
+`create-testnet-master.mjs` creates a fresh throwaway master account (the
+deployer). `testnet.mjs` deploys the contract built from
+`target/wasm32-unknown-unknown/release/proofgate_escrow.wasm` **with a deploy
+key that exists only in the process memory** (never written to
+`accounts.jsonl`), so once the process exits the secret is gone: the contract
+is code-frozen immediately after deployment and not even the parent master
+account can sign for it. To exercise the harness against the existing hackathon
+deployment (with its own freshly created jobs, since old job IDs are spent),
+set `NEAR_TESTNET_CONTRACT_ID` (the reuse
+path then audits the contract's full-access keys and asserts the verifier
+configuration); the role-account keys it needs must be the originals from the
+local, uncommitted `NEAR_TESTNET_CREDENTIALS` / `NEAR_TESTNET_ACCOUNTS` files.
+The beneficiary balance delta is sampled around the release; a concurrent
+faucet credit to the beneficiary between the samples can make that assertion
+flaky — re-running the harness is the remedy.
+
 The master script creates a top-level `proofgate-*.testnet` account through the
 official testnet helper (10 testnet NEAR). The first `testnet.mjs` run creates
 fixed owner, verifier, beneficiary, and attacker subaccounts, deploys the

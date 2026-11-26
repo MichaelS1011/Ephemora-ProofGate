@@ -11,6 +11,7 @@ import sqlite3
 import subprocess
 import tempfile
 import threading
+import time
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
@@ -18,7 +19,7 @@ from decimal import Decimal, InvalidOperation
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Iterator
-from urllib.error import URLError
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
@@ -47,6 +48,7 @@ PROGRAMS = {
         "kind": "module",
         "path": API_DIR / "examples" / "normalizer-rust.wasm",
         "source": API_DIR / "examples" / "normalizer.rs",
+        "guest_sha256": "5df37dfc1190a67b2924ebc5fbed68a5350a8f1ac14ed43669437cc4ce79a174",
         "compiler": "rustc · wasm32-wasip1",
         "abi": "preview1",
         "profile": "agent-readonly",
@@ -59,6 +61,7 @@ PROGRAMS = {
         "kind": "module",
         "path": API_DIR / "examples" / "normalizer-c.wasm",
         "source": API_DIR / "examples" / "normalizer.c",
+        "guest_sha256": "f27954b32c64da4dd17fc06c902062c2c29129d4775fa70cf89826c77ffacce6",
         "compiler": "Zig C compiler · wasm32-wasi",
         "abi": "preview1",
         "profile": "agent-readonly",
@@ -71,6 +74,7 @@ PROGRAMS = {
         "kind": "module",
         "path": API_DIR / "examples" / "normalizer-zig.wasm",
         "source": API_DIR / "examples" / "normalizer.zig",
+        "guest_sha256": "ca5f448aabfbacef024476b7a270c2e318054518026ab467d54985876bf63e40",
         "compiler": "Zig · wasm32-wasi",
         "abi": "preview1",
         "profile": "agent-readonly",
@@ -83,6 +87,7 @@ PROGRAMS = {
         "kind": "module",
         "path": API_DIR / "examples" / "normalizer-go.wasm",
         "source": API_DIR / "examples" / "normalizer.go",
+        "guest_sha256": "111f1b13c26a310b623e03773563fc75473ee04f143984d603bf01cdd98f0639",
         "compiler": "Go · GOOS=wasip1 GOARCH=wasm",
         "abi": "preview1",
         "profile": "build-tool",
@@ -97,6 +102,7 @@ PROGRAMS = {
         "kind": "module",
         "path": API_DIR / "examples" / "normalizer-assemblyscript.wasm",
         "source": API_DIR / "examples" / "normalizer.ts",
+        "guest_sha256": "d8d2911ec28e7019c0b9ebf0bdffb584bd462e1eb1411e3be3271e1a882d24ca",
         "compiler": "AssemblyScript · asc --runtime stub",
         "abi": "preview1",
         "profile": "agent-readonly",
@@ -108,6 +114,7 @@ PROGRAMS = {
         "label": "Python",
         "kind": "source-guest",
         "path": Path(os.environ.get("PROOFGATE_PYTHON_GUEST", CELL_GUEST_DIR / "python-guest.wasm")).expanduser().resolve(),
+        "source_sha256": "9f0f6ff0ed170afa550930f1f95f44ce7e26da12baf191f8731613cd765c0ab4",
         "source": API_DIR / "examples" / "normalizer.py",
         "compiler": "CPython 3.14 · Cell WASI 0.2 component guest",
         "abi": "component",
@@ -122,6 +129,7 @@ PROGRAMS = {
         "label": "JavaScript",
         "kind": "source-guest",
         "path": Path(os.environ.get("PROOFGATE_JAVASCRIPT_GUEST", CELL_GUEST_DIR / "javascript-guest.wasm")).expanduser().resolve(),
+        "source_sha256": "6dc94deb461fd310e6ea5af2ac2d83a4051d8fcbf4ff1d2ec9bfaa7895e90533",
         "source": API_DIR / "examples" / "normalizer.js",
         "compiler": "QuickJS-ng 0.14.0 · Cell WASI Preview1 guest",
         "abi": "preview1",
@@ -139,6 +147,7 @@ PROBE_PROGRAMS = {
         "kind": "probe",
         "path": API_DIR / "examples" / "denied-network.wasm",
         "source": API_DIR / "examples" / "denied-network.c",
+        "guest_sha256": "43233af0ef08a3ac05d2c61744685db0859bfee0f25d840bdfd1ee0e5947dd24",
         "compiler": "Zig C compiler · wasm32-wasi",
         "abi": "preview1",
         "profile": "agent-readonly",
@@ -153,6 +162,9 @@ CELL_PUBLIC_KEY = os.environ.get("PROOFGATE_CELL_PUBLIC_KEY", "")
 RECEIPT_PRIVATE_KEY = os.environ.get("PROOFGATE_RECEIPT_SIGNING_KEY", "")
 RECEIPT_PUBLIC_KEY = os.environ.get("PROOFGATE_RECEIPT_PUBLIC_KEY", "")
 BRIDGE_TOKEN = os.environ.get("PROOFGATE_BRIDGE_TOKEN", "")
+PROOFGATE_CONTRACT_ID = os.environ.get("PROOFGATE_CONTRACT_ID", "")
+SETTLEMENT_RPC_CHECK = os.environ.get("PROOFGATE_SETTLEMENT_RPC_CHECK", "") == "1"
+SETTLEMENT_SIGNER = os.environ.get("PROOFGATE_SETTLEMENT_SIGNER", "")
 PORT = int(os.environ.get("PROOFGATE_PORT", "8000"))
 NEAR_TESTNET_RPC_URL = os.environ.get("NEAR_TESTNET_RPC_URL", "https://test.rpc.fastnear.com")
 ALLOWED_ORIGINS = {
@@ -302,6 +314,7 @@ def initialize_database() -> None:
         columns = {item["name"] for item in db.execute("PRAGMA table_info(jobs)").fetchall()}
         if "language" not in columns:
             db.execute("ALTER TABLE jobs ADD COLUMN language TEXT NOT NULL DEFAULT 'rust'")
+        db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_settlements_network_tx ON settlements(network, tx_hash)")
 
 
 def settlement_for(job_id: str) -> dict[str, Any] | None:
@@ -532,6 +545,87 @@ def near_testnet_status() -> dict[str, Any]:
     }
 
 
+def _confirm_settlement_tx(tx_hash: str, contract_id: str, job_id: str, receipt_digest: str) -> None:
+    """Best-effort on-chain confirmation of a claimed settlement.
+
+    Gated behind PROOFGATE_SETTLEMENT_RPC_CHECK=1 so the offline sandbox flow
+    is unaffected. When enabled, the RPC answer must confirm that tx_hash is
+    a successful single release_job call for exactly this job and receipt
+    digest on the allowlisted contract; any contradiction is refused. Only a
+    genuinely unreachable RPC (DNS/connect/read failure) is tolerated — an
+    answered error, redirect, rate limit that does not clear, or a malformed
+    body fails closed (the bridge remains the payment authority otherwise).
+    """
+    parsed = urlparse(NEAR_TESTNET_RPC_URL)
+    allowed_hosts = {"archival-rpc.testnet.near.org", "test.rpc.fastnear.com"}
+    try:
+        rpc_port = parsed.port
+    except ValueError:
+        rpc_port = 1
+    if parsed.scheme != "https" or parsed.hostname not in allowed_hosts or rpc_port:
+        raise ApiError(503, "Settlement RPC confirmation requires an approved Testnet RPC host.")
+
+    class RejectRedirect(HTTPRedirectHandler):
+        def redirect_request(self, _req: Any, _fp: Any, _code: int, _message: str, _headers: Any, _newurl: str) -> None:
+            return None
+
+    opener = build_opener(RejectRedirect)
+    # EXPERIMENTAL_tx_status is routed by the signing account; try the
+    # configured signer first, then the contract and beneficiary as fallbacks.
+    signers = [SETTLEMENT_SIGNER, contract_id]
+    transient = {429, 502, 503, 504}
+    response_json: Any = None
+    for signer in [item for item in signers if item]:
+        request_body = canonical_json(
+            {"jsonrpc": "2.0", "id": "proofgate-settle", "method": "EXPERIMENTAL_tx_status", "params": [tx_hash, signer]}
+        )
+        request = Request(
+            NEAR_TESTNET_RPC_URL,
+            data=request_body,
+            headers={"Content-Type": "application/json", "Accept": "application/json"},
+            method="POST",
+        )
+        for attempt in range(2):  # one retry for transient rate limits
+            try:
+                with opener.open(request, timeout=8) as response:
+                    response_json = json.loads(response.read(256_000))
+                break
+            except HTTPError as exc:
+                if exc.code in transient and attempt == 0:
+                    time.sleep(2.0)
+                    continue
+                raise ApiError(409, "The Testnet RPC rejected the settlement lookup.") from None
+            except (URLError, TimeoutError, OSError):
+                return  # unreachable: availability wins over confirmation
+            except json.JSONDecodeError:
+                raise ApiError(409, "The Testnet RPC returned a malformed answer.") from None
+        if isinstance(response_json, dict) and "result" in response_json:
+            break
+    result = response_json.get("result") if isinstance(response_json, dict) else None
+    if not isinstance(result, dict):
+        raise ApiError(409, "The Testnet RPC does not confirm this settlement transaction.")
+    transaction = result.get("transaction") if isinstance(result.get("transaction"), dict) else {}
+    if transaction.get("receiver_id") != contract_id:
+        raise ApiError(409, "The settlement transaction was not sent to the escrow contract.")
+    if SETTLEMENT_SIGNER and transaction.get("signer_id") != SETTLEMENT_SIGNER:
+        raise ApiError(409, "The settlement transaction was not signed by the configured signer.")
+    actions = transaction.get("actions")
+    if not isinstance(actions, list) or len(actions) != 1 or not isinstance(actions[0], dict):
+        raise ApiError(409, "The settlement transaction is not a single function call.")
+    call = actions[0].get("FunctionCall")
+    if not isinstance(call, dict) or call.get("method_name") != "release_job":
+        raise ApiError(409, "The settlement transaction is not a release_job call.")
+    try:
+        call_args = json.loads(base64.b64decode(call.get("args", ""), validate=True))
+    except (ValueError, TypeError):
+        raise ApiError(409, "The settlement transaction carries undecodable arguments.") from None
+    if call_args != {"job_id": job_id, "receipt_digest": receipt_digest}:
+        raise ApiError(409, "The settlement transaction does not release this job with the expected receipt digest.")
+    status = result.get("status") if isinstance(result.get("status"), dict) else {}
+    if "SuccessValue" not in status:
+        raise ApiError(409, "The settlement transaction did not succeed on Testnet.")
+
+
 def list_jobs() -> list[dict[str, Any]]:
     with db_connection() as db:
         rows = db.execute("SELECT * FROM jobs ORDER BY created_at DESC").fetchall()
@@ -590,9 +684,9 @@ def create_job(payload: dict[str, Any]) -> dict[str, Any]:
         raise ApiError(400, "Input must contain valid UTF-8 text.") from exc
     if len(encoded) > MAX_INPUT_BYTES:
         raise ApiError(400, f"Input must be {MAX_INPUT_BYTES} bytes or smaller.")
-    if not INPUT_PATTERN.fullmatch(input_text):
+    if not INPUT_PATTERN.fullmatch(input_text) or not input_text.strip():
         raise ApiError(400, "This sample accepts ASCII letters, numbers, whitespace, periods, commas, underscores, and hyphens.")
-    if not re.fullmatch(r"(?:0|[1-9]\d*)(?:\.\d{1,2})?", reward):
+    if not re.fullmatch(r"(?:0|[1-9]\d*)(?:\.\d{1,2})?", reward, flags=re.ASCII):
         raise ApiError(400, "Sample reward must be a decimal number with no more than two decimal places.")
     reward_value = Decimal(reward)
     if reward_value <= 0 or reward_value > 10:
@@ -600,16 +694,22 @@ def create_job(payload: dict[str, Any]) -> dict[str, Any]:
     if not re.fullmatch(r"[a-z0-9._-]{2,64}", beneficiary):
         raise ApiError(400, "Beneficiary must be a lowercase NEAR-style account name.")
 
-    job_id = f"PG-{uuid.uuid4().hex[:8].upper()}"
     nonce = uuid.uuid4().hex
     created = timestamp()
     job_policy = policy_for(language)
     job_policy_digest = policy_digest(job_policy)
-    with db_connection() as db:
-        db.execute(
-            "INSERT INTO jobs (job_id, created_at, job_name, input_text, reward, beneficiary, language, nonce, policy_json, policy_digest, state) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (job_id, created, name.strip(), input_text, f"{reward_value:.2f}", beneficiary, language, nonce, json.dumps(job_policy, sort_keys=True), job_policy_digest, "Ready"),
-        )
+    for attempt in range(3):
+        job_id = f"PG-{uuid.uuid4().hex[:8].upper()}"
+        try:
+            with db_connection() as db:
+                db.execute(
+                    "INSERT INTO jobs (job_id, created_at, job_name, input_text, reward, beneficiary, language, nonce, policy_json, policy_digest, state) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (job_id, created, name.strip(), input_text, f"{reward_value:.2f}", beneficiary, language, nonce, json.dumps(job_policy, sort_keys=True), job_policy_digest, "Ready"),
+                )
+            break
+        except sqlite3.IntegrityError:
+            if attempt == 2:
+                raise ApiError(500, "Could not allocate a unique job ID.") from None
     return row_to_job(get_job(job_id))
 
 
@@ -635,12 +735,11 @@ def _expected_normalized(input_text: str) -> dict[str, Any]:
 
 def _program_artifact_available(program: dict[str, Any]) -> bool:
     path = program["path"]
-    if not path.is_file():
+    pinned = program.get("guest_sha256")
+    if not path.is_file() or not pinned:
         return False
-    if program["kind"] != "source-guest":
-        return True
     try:
-        return sha256_hex(path.read_bytes()) == program["guest_sha256"]
+        return sha256_hex(path.read_bytes()) == pinned
     except OSError:
         return False
 
@@ -752,6 +851,11 @@ def run_job(job_id: str) -> dict[str, Any]:
             _set_blocked(job_id, "guest_unavailable", "The selected language guest is no longer available.")
             raise ApiError(503, "The selected language guest is no longer available.")
         guest_bytes = guest["path"].read_bytes()
+        # Bind the executed bytes to the reviewed manifest (examples/CHECKSUMS.txt):
+        # digest the exact bytes read once, fail closed before they reach Cell.
+        if sha256_hex(guest_bytes) != guest.get("guest_sha256"):
+            _set_blocked(job_id, "guest_digest_mismatch", "The selected language artifact does not match its pinned reviewed digest.")
+            raise ApiError(503, "The selected language artifact does not match its pinned reviewed digest.")
         expected_magic = b"\0asm\r\0\x01\0" if guest["abi"] == "component" else b"\0asm\x01\0\0\0"
         if len(guest_bytes) > MAX_WASM_BYTES or not guest_bytes.startswith(expected_magic):
             _set_blocked(job_id, "guest_invalid", "The selected language artifact is not a supported WebAssembly v1 module.")
@@ -764,11 +868,17 @@ def run_job(job_id: str) -> dict[str, Any]:
             input_path = work / "job-input.txt"
             evidence_path = work / "cell-evidence.dsse.json"
             tenant_book = DATA_DIR / "tenant-books" / f"{job_id}.jsonl"
-            tenant_book.parent.mkdir(parents=True, exist_ok=True)
+            tenant_book.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
             module_path.write_bytes(guest_bytes)
             input_path.write_text(job["input_text"], encoding="utf-8")
             source_bytes = guest["source"].read_bytes()
             if guest["kind"] == "source-guest":
+                # The interpreter wasm alone is not the program: pin the
+                # executed source text too, so a swapped normalizer.py/.js
+                # cannot run inside a pinned interpreter.
+                if sha256_hex(source_bytes) != guest.get("source_sha256"):
+                    _set_blocked(job_id, "guest_digest_mismatch", "The interpreter source does not match its pinned reviewed digest.")
+                    raise ApiError(503, "The interpreter source does not match its pinned reviewed digest.")
                 if guest["input_mode"] == "stdin":
                     (source_dir / "main.py").write_bytes(source_bytes)
                 elif guest["input_mode"] == "json-file":
@@ -833,6 +943,11 @@ def run_job(job_id: str) -> dict[str, Any]:
             envelope = json.loads(envelope_bytes)
             report = _parse_cell_report(envelope)
             _validate_report(report, job, guest, source_dir)
+            # The receipt must attest the policy actually enforced by this run,
+            # not merely the one pinned when the job was created.
+            if policy_digest(policy_for(job["language"])) != job["policy_digest"]:
+                _set_blocked(job_id, "policy_drift", "The enforced policy no longer matches the policy pinned at creation.")
+                raise ApiError(422, "The enforced policy no longer matches the policy pinned at creation.")
             if probe:
                 if not re.search(r"^SOCK_ACCEPT_ERRNO:57$", process.stderr, flags=re.MULTILINE):
                     _set_blocked(job_id, "probe_not_denied", "The denial probe did not receive ENOTSOCK.")
@@ -872,13 +987,27 @@ def run_job(job_id: str) -> dict[str, Any]:
             if len(output_lines) != 1:
                 _set_blocked(job_id, "output_unavailable", "The expected bounded output was not observed exactly once.")
                 raise ApiError(422, "The expected bounded output was not observed exactly once.")
+            def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+                # Python's json keeps the LAST duplicate key silently; another
+                # parser would see a different object, so the digest would not
+                # commit to what an independent verifier parses. Reject them.
+                unique: dict[str, Any] = {}
+                for key, value in pairs:
+                    if key in unique:
+                        raise ValueError(f"duplicate JSON key: {key}")
+                    unique[key] = value
+                return unique
+
             try:
-                output = json.loads(output_lines[0])
-            except json.JSONDecodeError as exc:
+                output = json.loads(output_lines[0], object_pairs_hook=_reject_duplicate_keys)
+            except (json.JSONDecodeError, ValueError) as exc:
                 _set_blocked(job_id, "output_invalid", "The Cell output was not valid JSON.")
                 raise ApiError(422, "The Cell output was not valid JSON.") from exc
             expected_output = _expected_normalized(job["input_text"])
-            if output != expected_output:
+            # Python equality is type-permissive (2.0 == 2, True == 1); the receipt
+            # digest hashes canonical JSON, so compare the exact canonical bytes to
+            # guarantee one payload has exactly one digest for any re-verifier.
+            if output != expected_output or canonical_json(output) != canonical_json(expected_output):
                 _set_blocked(job_id, "output_mismatch", "The output did not match the job's expected normalization.")
                 raise ApiError(422, "The output did not match the job's expected normalization.")
 
@@ -998,10 +1127,12 @@ def record_settlement(job_id: str, payload: dict[str, Any]) -> dict[str, Any]:
     contract_id = payload.get("contractId")
     if not isinstance(contract_id, str) or not re.fullmatch(r"[a-z0-9._-]{2,64}", contract_id):
         raise ApiError(400, "Settlement contract ID is invalid.")
+    if PROOFGATE_CONTRACT_ID and contract_id != PROOFGATE_CONTRACT_ID:
+        raise ApiError(400, "Settlement contract ID does not match the configured escrow contract.")
     if payload.get("receiptDigest") != expected_digest:
         raise ApiError(400, "Settlement receipt digest does not match the accepted receipt.")
     amount = payload.get("amount")
-    if not isinstance(amount, str) or not re.fullmatch(r"(?:0|[1-9]\d*)(?:\.\d{1,6})?", amount):
+    if not isinstance(amount, str) or not re.fullmatch(r"(?:0|[1-9]\d*)(?:\.\d{1,6})?", amount, flags=re.ASCII):
         raise ApiError(400, "Settlement amount is invalid.")
     try:
         amount_value = Decimal(amount)
@@ -1011,6 +1142,7 @@ def record_settlement(job_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         raise ApiError(400, "Settlement amount must be greater than 0 and at most 10 NEAR.")
     if amount_value != Decimal(job["reward"]):
         raise ApiError(400, "Settlement amount does not match the job reward.")
+    canonical_amount = f"{amount_value:.2f}"
     if payload.get("beneficiary") != job["beneficiary"]:
         raise ApiError(400, "Settlement beneficiary does not match the job beneficiary.")
     if payload.get("status") != "Paid":
@@ -1018,6 +1150,10 @@ def record_settlement(job_id: str, payload: dict[str, Any]) -> dict[str, Any]:
     tx_hash = payload.get("txHash")
     if not isinstance(tx_hash, str) or not re.fullmatch(r"[1-9A-HJ-NP-Za-km-z]{43,44}", tx_hash):
         raise ApiError(400, "Settlement transaction hash is invalid.")
+    if SETTLEMENT_RPC_CHECK:
+        if network != "testnet":
+            raise ApiError(400, "Settlement RPC confirmation is enabled and supports only the testnet network.")
+        _confirm_settlement_tx(tx_hash, contract_id, job_id, expected_digest)
     recorded = timestamp()
     with db_connection() as db:
         db.execute("BEGIN IMMEDIATE")
@@ -1025,10 +1161,17 @@ def record_settlement(job_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         if existing is not None:
             db.rollback()
             raise ApiError(409, "This job already has a settlement record.")
-        db.execute(
-            "INSERT INTO settlements (job_id, network, contract_id, receipt_digest, amount, beneficiary, status, tx_hash, recorded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (job_id, network, contract_id, expected_digest, amount, job["beneficiary"], "Paid", tx_hash, recorded),
-        )
+        try:
+            db.execute(
+                "INSERT INTO settlements (job_id, network, contract_id, receipt_digest, amount, beneficiary, status, tx_hash, recorded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (job_id, network, contract_id, expected_digest, canonical_amount, job["beneficiary"], "Paid", tx_hash, recorded),
+            )
+        except sqlite3.IntegrityError:
+            # The UNIQUE (network, tx_hash) index: one settlement per ledger
+            # transaction. Uniqueness is per network by design (the sandbox
+            # and Testnet are different ledgers).
+            db.rollback()
+            raise ApiError(409, "This transaction hash is already recorded as a settlement.") from None
         db.commit()
     return {"job": row_to_job(get_job(job_id)), "settlement": settlement_for(job_id)}
 
@@ -1036,6 +1179,7 @@ def record_settlement(job_id: str, payload: dict[str, Any]) -> dict[str, Any]:
 class Handler(BaseHTTPRequestHandler):
     server_version = "ProofGateLocal/0.1"
     sys_version = ""
+    timeout = 15
 
     def log_message(self, _format: str, *_args: Any) -> None:
         return
@@ -1131,7 +1275,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(201, run_job(probe_job["id"]))
             if len(parts) == 4 and parts[:2] == ["api", "jobs"] and parts[3] == "settlement":
                 token = self.headers.get("X-ProofGate-Bridge", "")
-                if not BRIDGE_TOKEN or not hmac.compare_digest(token, BRIDGE_TOKEN):
+                if not BRIDGE_TOKEN or not hmac.compare_digest(token.encode("utf-8"), BRIDGE_TOKEN.encode("utf-8")):
                     return self._send(403, {"error": "Settlement bridge authorization failed."})
                 return self._send(201, record_settlement(parts[2], self._body()))
             if len(parts) == 4 and parts[:2] == ["api", "jobs"] and parts[3] == "run":
@@ -1146,7 +1290,23 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main() -> None:
+    fixture_dir = (API_DIR / "tests" / "fixtures").resolve()
+    for env_name, value in (("PROOFGATE_RECEIPT_SIGNING_KEY", RECEIPT_PRIVATE_KEY), ("PROOFGATE_CELL_SIGNING_KEY", CELL_PRIVATE_KEY)):
+        if value and fixture_dir in Path(value).expanduser().resolve().parents:
+            raise SystemExit(
+                f"Refusing to start: {env_name} points into the committed test fixture directory. "
+                "Generate local development keys with keygen.py instead."
+            )
     initialize_database()
+    # Reclaim jobs orphaned in Executing by a crash between the state
+    # transition and completion. This runs only here — at server start, when
+    # no request has been accepted yet and no other server instance should be
+    # alive — never from initialize_database(), which tests also call.
+    with db_connection() as db:
+        db.execute(
+            "UPDATE jobs SET state = 'Blocked', error_code = 'execution_interrupted', error_message = ? WHERE state = 'Executing'",
+            ("The API stopped while this job was executing; a restart reclaimed it.",),
+        )
     server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
     print(f"ProofGate local API listening on http://127.0.0.1:{PORT}")
     print("This service binds to loopback and is not hardened for public-network exposure.")

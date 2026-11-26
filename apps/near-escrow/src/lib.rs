@@ -443,4 +443,63 @@ mod tests {
         contract.create_job("PG-007".to_string(), account("agent.testnet"), U64(2_000));
         contract.create_job("PG-007".to_string(), account("agent.testnet"), U64(2_000));
     }
+
+    /// Pins the audited boundary that the contract validates only the digest
+    /// *shape*: a syntactically valid digest that ProofGate never issued is
+    /// still accepted for release. The binding between a job and a real
+    /// receipt lives in the verifier API, which records a settlement only
+    /// when the digest equals the canonical SHA-256 of the receipt it signed.
+    /// Documented in docs/SECURITY_LIMITATIONS.md.
+    #[test]
+    fn documents_shape_only_digest_validation_on_chain() {
+        let mut contract = contract();
+        set_context("owner.testnet", 500, 1_000);
+        contract.create_job("PG-011".to_string(), account("agent.testnet"), U64(2_000));
+
+        set_context("verifier.testnet", 0, 1_500);
+        let never_issued = format!("sha256:{}", "0".repeat(64));
+        let _promise = contract.release_job("PG-011".to_string(), never_issued.clone());
+        let job = contract.get_job("PG-011".to_string()).expect("job stored");
+        assert_eq!(job.status, JobStatus::Releasing);
+        assert_eq!(job.receipt_digest.as_deref(), Some(never_issued.as_str()));
+    }
+
+    /// Pins the audited boundary that the contract sets no dust floor: a
+    /// one-yoctoNEAR escrow is accepted and stays refundable. The sub-cent
+    /// floor is enforced by the verifier API's reward validation, and the
+    /// per-job storage cost is the economic brake; both are documented in
+    /// docs/SECURITY_LIMITATIONS.md.
+    #[test]
+    fn documents_dust_escrow_acceptance_contract_side() {
+        let mut contract = contract();
+        set_context("owner.testnet", 1, 1_000);
+        contract.create_job("PG-012".to_string(), account("agent.testnet"), U64(2_000));
+        let job = contract.get_job("PG-012".to_string()).expect("job stored");
+        assert_eq!(job.amount_yocto, "1");
+
+        set_context("owner.testnet", 0, 3_000);
+        let _promise = contract.refund_expired("PG-012".to_string());
+        let job = contract.get_job("PG-012".to_string()).expect("job stored");
+        assert_eq!(job.status, JobStatus::Refunding);
+    }
+
+    #[test]
+    #[should_panic(expected = "Expiry cannot be more than 30 days away")]
+    fn rejects_expiry_beyond_thirty_days() {
+        let mut contract = contract();
+        set_context("owner.testnet", 500, 1_000);
+        contract.create_job(
+            "PG-013".to_string(),
+            account("agent.testnet"),
+            U64(1_000 + MAX_EXPIRY_AHEAD_NS + 1),
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "Job ID is too long")]
+    fn rejects_job_id_beyond_the_bound() {
+        let mut contract = contract();
+        set_context("owner.testnet", 500, 1_000);
+        contract.create_job("x".repeat(MAX_JOB_ID_BYTES + 1), account("agent.testnet"), U64(2_000));
+    }
 }
